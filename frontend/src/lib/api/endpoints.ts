@@ -9,10 +9,19 @@ import type {
   ScheduleResponse,
   SlackStatus,
 } from "../../types/api";
-import { API_URL, api } from "./client";
+import { API_URL, api, isUnauthorized } from "./client";
 
 // ---- auth ----
-export const getMe = () => api<Me>("/api/me");
+// Logged out is a normal answer, not an error: return null. That keeps it
+// out of error handling and retries, so a 401 here can never start a refetch loop.
+export async function getMe(): Promise<Me | null> {
+  try {
+    return await api<Me>("/api/me");
+  } catch (err) {
+    if (isUnauthorized(err)) return null;
+    throw err;
+  }
+}
 export const logout = () => api<void>("/auth/logout", { method: "POST" });
 // Full-page navigations (OAuth needs the browser to leave our app), not fetch calls.
 export const googleLoginUrl = `${API_URL}/auth/google`;

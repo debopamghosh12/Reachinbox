@@ -16,10 +16,14 @@ export const queryKeys = {
   slack: ["slack"] as const,
 };
 
-// If any request comes back 401 (session expired), re-check /api/me.
-// It fails too, and RequireAuth sends the user to /login.
+// Any other request answering 401 means the session ended (expired, or logged
+// out in another tab). Record "logged out" directly (no refetch of /api/me,
+// which is what once caused a 401 -> refetch -> 401 loop). RequireAuth then
+// redirects to /login once, which unmounts every page that polls.
 function onError(err: unknown) {
-  if (isUnauthorized(err)) void queryClient.invalidateQueries({ queryKey: queryKeys.me });
+  if (!isUnauthorized(err)) return;
+  void queryClient.cancelQueries({ predicate: (q) => q.queryKey[0] !== queryKeys.me[0] });
+  queryClient.setQueryData(queryKeys.me, null);
 }
 
 export const queryClient = new QueryClient({
