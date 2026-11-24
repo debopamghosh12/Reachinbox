@@ -6,9 +6,16 @@ import { cn } from "../../lib/cn";
 const BASE = "inline-flex h-6 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium whitespace-nowrap";
 
 // Orange time pill for upcoming emails, gray "Sent", red "Failed".
-export function StatusPill({ status, scheduledAt }: { status: EmailStatus; scheduledAt: string }) {
+// `error` (failed emails) becomes the pill's tooltip; the detail page shows it in full.
+export function StatusPill({ status, scheduledAt, error }: { status: EmailStatus; scheduledAt: string; error?: string | null }) {
   if (status === "sent") return <span className={cn(BASE, "bg-gray-100 text-[#747D89]")}>Sent</span>;
-  if (status === "failed") return <span className={cn(BASE, "bg-red-50 text-red-700")}>Failed</span>;
+  if (status === "failed") {
+    return (
+      <span className={cn(BASE, "bg-red-50 text-red-700")} title={error ? `Failed: ${error}` : "Failed"}>
+        Failed
+      </span>
+    );
+  }
   return (
     <time dateTime={scheduledAt} title={formatFullDate(scheduledAt)} className={cn(BASE, "bg-orange-100 text-orange-700")}>
       <Clock className="h-3 w-3" aria-hidden />

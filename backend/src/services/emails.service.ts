@@ -5,10 +5,11 @@ import { searchEmailIds } from "./search.service";
 import { isHtml, toPreview } from "../utils/html";
 
 // The "Scheduled" tab also shows rows currently being sent - from the user's
-// point of view they haven't been sent yet.
+// point of view they haven't been sent yet. The "Sent" tab shows finished
+// emails: sent AND failed (the failed ones carry a red pill and the error).
 const STATUS_FILTER: Record<NonNullable<ListQuery["status"]>, EmailStatus[]> = {
   scheduled: ["scheduled", "sending"],
-  sent: ["sent"],
+  sent: ["sent", "failed"],
   failed: ["failed"],
 };
 
