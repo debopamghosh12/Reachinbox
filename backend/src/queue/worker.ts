@@ -3,8 +3,9 @@
 import { Worker } from "bullmq";
 import { env } from "../config/env";
 import { prisma } from "../config/prisma";
-import { createRedisConnection } from "../config/redis";
+import { createRedisConnection, redis } from "../config/redis";
 import { EMAIL_QUEUE_NAME, emailQueue, type SendEmailJobData } from "./emailQueue";
+import { reconcile } from "./reconcile";
 import { processSendEmail } from "../services/sendEmail.service";
 import { closeTransporters } from "../services/mailer";
 import { logger } from "../utils/logger";
@@ -21,7 +22,9 @@ const worker = new Worker<SendEmailJobData>(EMAIL_QUEUE_NAME, processSendEmail, 
 });
 
 worker.on("ready", () =>
-  logger.info(`Worker ready (concurrency=${env.WORKER_CONCURRENCY}, minDelay=${env.MIN_DELAY_MS}ms)`),
+  logger.info(
+    `Worker ${process.pid} ready (concurrency=${env.WORKER_CONCURRENCY}, minDelay=${env.MIN_DELAY_MS}ms, dryRun=${env.SMTP_DRY_RUN})`,
+  ),
 );
 // "failed" fires after EVERY failed attempt; only the last one is a real failure
 // (earlier ones are already logged as warnings by the processor and will retry).
@@ -32,15 +35,30 @@ worker.on("failed", (job, err) => {
 });
 worker.on("error", (err) => logger.error("Worker error", err));
 
-// Graceful shutdown: worker.close() stops taking new jobs and waits for the
-// active ones to finish, so we don't leave a row half-way through sending.
+// Also reconcile from the worker, so a worker-only restart recovers too.
+// Running it here AND in the API at the same time is safe (see reconcile.ts).
+reconcile().catch((err) => logger.error("[reconcile] failed", err));
+
+// Graceful shutdown: worker.close() stops fetching new jobs and waits for the
+// active ones to finish, so a normal restart never leaves a row in 'sending'.
+// Rate-limited jobs are already back to 'scheduled' + delayed, so they're unaffected.
+// If an SMTP call hangs past SHUTDOWN_TIMEOUT_MS we exit anyway; that row stays
+// 'sending' and is handled by reconcile's stuck-row rule on the next boot.
+let shuttingDown = false;
 async function shutdown(signal: string) {
-  logger.info(`${signal} received, closing worker...`);
-  await worker.close();
+  if (shuttingDown) return;
+  shuttingDown = true;
+  logger.info(`${signal} received, waiting for in-flight jobs (max ${env.SHUTDOWN_TIMEOUT_MS}ms)...`);
+
+  const timedOut = await Promise.race([
+    worker.close().then(() => false),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(true), env.SHUTDOWN_TIMEOUT_MS)),
+  ]);
+  if (timedOut) logger.warn("Shutdown timeout reached with jobs still running - exiting anyway");
+  else logger.info("All in-flight jobs finished");
+
   closeTransporters();
-  await emailQueue.close();
-  await prisma.$disconnect();
-  await connection.quit();
+  await Promise.allSettled([emailQueue.close(), prisma.$disconnect(), connection.quit(), redis.quit()]);
   process.exit(0);
 }
 

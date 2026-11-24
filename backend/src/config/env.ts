@@ -26,8 +26,15 @@ const envSchema = z.object({
   JOB_ATTEMPTS: positiveInt,
   JOB_BACKOFF_MS: positiveInt,
   JOB_RETENTION_HOURS: positiveInt,
-  STUCK_SENDING_MS: positiveInt,
+  STUCK_SENDING_THRESHOLD_MS: positiveInt,
   MAX_LEADS_PER_REQUEST: positiveInt,
+  // Spacing (per seq number) added when a job is pushed to a later hour, to keep order.
+  RESCHEDULE_SEQ_OFFSET_MS: nonNegativeInt,
+  RECONCILE_BATCH_SIZE: positiveInt,
+  // Max time to wait for in-flight jobs on shutdown before exiting anyway.
+  SHUTDOWN_TIMEOUT_MS: positiveInt,
+  // true = worker skips the real SMTP call (load tests). Not a limit, so it has a default.
+  SMTP_DRY_RUN: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
 
   PAGE_SIZE_DEFAULT: positiveInt,
   PAGE_SIZE_MAX: positiveInt,

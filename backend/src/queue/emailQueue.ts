@@ -3,6 +3,7 @@ import { env } from "../config/env";
 import { createRedisConnection } from "../config/redis";
 
 export const EMAIL_QUEUE_NAME = "email-send";
+const SEND_EMAIL_JOB = "send-email";
 
 // The job carries ONLY the email id. Postgres is the source of truth for
 // content, recipient and status; the job is just "wake up at time T for row X".
@@ -25,3 +26,14 @@ export const emailQueue = new Queue<SendEmailJobData>(EMAIL_QUEUE_NAME, {
     removeOnFail: { age: env.JOB_RETENTION_HOURS * 3600 },
   },
 });
+
+// Used by both scheduling and reconcile, so a job is always built the same way.
+// jobId = email id: BullMQ ignores an add whose jobId already exists, which is
+// what makes "add it again just in case" safe.
+export function buildSendJob(email: { id: string; scheduledAt: Date }, now = Date.now()) {
+  return {
+    name: SEND_EMAIL_JOB,
+    data: { emailId: email.id },
+    opts: { jobId: email.id, delay: Math.max(0, email.scheduledAt.getTime() - now) },
+  };
+}

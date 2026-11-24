@@ -7,3 +7,7 @@ import { env } from "./env";
 export function createRedisConnection(): Redis {
   return new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 }
+
+// Shared client for our own commands (rate-limit counters, notification dedupe).
+// BullMQ gets its own connections, so our calls never queue behind its blocking ones.
+export const redis = createRedisConnection();

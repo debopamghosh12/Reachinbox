@@ -9,6 +9,7 @@
     "dev:all": "concurrently -n api,worker -c blue,magenta \"npm:dev\" \"npm:dev:worker\"",
     "start": "node dist/src/server.js",
     "start:worker": "node dist/src/queue/worker.js",
+    "loadtest": "tsx scripts/loadtest.ts",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
     "db:seed": "tsx prisma/seed.ts",

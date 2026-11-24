@@ -2,7 +2,9 @@
 import { createApp } from "./app";
 import { env } from "./config/env";
 import { prisma } from "./config/prisma";
+import { redis } from "./config/redis";
 import { emailQueue } from "./queue/emailQueue";
+import { reconcile } from "./queue/reconcile";
 import { ensureDevUser } from "./middleware/devUser";
 import { logger } from "./utils/logger";
 
@@ -13,13 +15,17 @@ async function main() {
     logger.info(`API listening on http://localhost:${env.PORT} (bull-board: /admin/queues)`);
   });
 
+  // Bring Redis back in line with Postgres. Not awaited: the API can serve
+  // requests meanwhile, because a new schedule and reconcile can't conflict
+  // (both add jobs by jobId = email.id).
+  reconcile().catch((err) => logger.error("[reconcile] failed", err));
+
   // Graceful shutdown: stop accepting connections, let in-flight requests
   // finish, then close Redis/Postgres so nothing is cut off mid-write.
   async function shutdown(signal: string) {
     logger.info(`${signal} received, shutting down API...`);
     await new Promise<void>((resolve) => server.close(() => resolve()));
-    await emailQueue.close();
-    await prisma.$disconnect();
+    await Promise.allSettled([emailQueue.close(), prisma.$disconnect(), redis.quit()]);
     process.exit(0);
   }
 

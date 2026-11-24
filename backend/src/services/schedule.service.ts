@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { prisma } from "../config/prisma";
-import { emailQueue } from "../queue/emailQueue";
+import { buildSendJob, emailQueue } from "../queue/emailQueue";
 import type { ScheduleInput } from "../schemas/email.schemas";
 import { AppError } from "../utils/AppError";
 
@@ -47,16 +47,10 @@ export async function scheduleEmails(userId: string, input: ScheduleInput, leads
 
   // Only AFTER the commit do we enqueue: a job must never point at a row that
   // doesn't exist. addBulk sends all jobs to Redis in one round trip.
-  // jobId = email.id: BullMQ ignores an add whose jobId already exists,
-  // so the same email can never get two jobs.
+  // If Redis fails right here, the rows stay 'scheduled' without a job and
+  // reconcile() re-adds them on the next boot.
   const now = Date.now();
-  await emailQueue.addBulk(
-    rows.map((row) => ({
-      name: "send-email",
-      data: { emailId: row.id },
-      opts: { jobId: row.id, delay: Math.max(0, row.scheduledAt.getTime() - now) },
-    })),
-  );
+  await emailQueue.addBulk(rows.map((row) => buildSendJob(row, now)));
 
   return {
     batchId,
