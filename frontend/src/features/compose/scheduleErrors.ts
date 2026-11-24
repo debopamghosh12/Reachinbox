@@ -50,7 +50,7 @@ function readInvalidList(details: unknown): string[] {
   return [];
 }
 
-function readIssues(details: unknown): { path: string; message: string }[] {
+export function readIssues(details: unknown): { path: string; message: string }[] {
   if (!Array.isArray(details)) return [];
   return details.flatMap((d: unknown) =>
     typeof d === "object" && d !== null && "path" in d && "message" in d && typeof d.path === "string" && typeof d.message === "string"

@@ -11,11 +11,21 @@ import {
   sessionCookieOptions,
   startGoogleLogin,
 } from "../services/auth.service";
+import { clearEmailAttempts, countAuthAttempt } from "../services/authRateLimit";
+import { login, signup } from "../services/passwordAuth.service";
+import { loginSchema, signupSchema } from "../schemas/auth.schemas";
 import { getUserId } from "../utils/requestUser";
 import { logger } from "../utils/logger";
 
 // Browser-facing login routes, mounted at /auth.
 export const authRouter = Router();
+
+// Same cookie for every way of logging in.
+function startSession(res: Response, userId: string) {
+  res.cookie(SESSION_COOKIE, createSessionToken(userId), { ...sessionCookieOptions(), maxAge: env.SESSION_TTL_MS });
+}
+
+const publicProfile = (u: { name: string; email: string; avatarUrl: string | null }) => ({ name: u.name, email: u.email, avatarUrl: u.avatarUrl });
 
 function toLoginPage(res: Response, reason: string) {
   res.redirect(`${env.FRONTEND_URL}/login?${new URLSearchParams({ error: reason })}`);
@@ -48,9 +58,33 @@ authRouter.get("/google/callback", async (req, res) => {
     return toLoginPage(res, "exchange_failed");
   }
 
-  res.cookie(SESSION_COOKIE, createSessionToken(user.id), { ...sessionCookieOptions(), maxAge: env.SESSION_TTL_MS });
-  logger.info(`[auth] user ${user.id} logged in`);
+  startSession(res, user.id);
+  logger.info(`[auth] user ${user.id} logged in (google)`);
   res.redirect(`${env.FRONTEND_URL}/dashboard`);
+});
+
+// ---------- email + password ----------
+// JSON endpoints called with fetch by the login page. The rate limit runs
+// before any database or bcrypt work. req.ip is the socket address (no proxy
+// is trusted); see the README.
+
+authRouter.post("/signup", async (req, res) => {
+  const input = signupSchema.parse(req.body);
+  await countAuthAttempt("signup", req.ip ?? "unknown", input.email);
+  const user = await signup(input);
+  startSession(res, user.id);
+  logger.info(`[auth] user ${user.id} signed up (password)`);
+  res.status(201).json(publicProfile(user));
+});
+
+authRouter.post("/login", async (req, res) => {
+  const input = loginSchema.parse(req.body);
+  await countAuthAttempt("login", req.ip ?? "unknown", input.email);
+  const user = await login(input);
+  await clearEmailAttempts("login", input.email);
+  startSession(res, user.id);
+  logger.info(`[auth] user ${user.id} logged in (password)`);
+  res.json(publicProfile(user));
 });
 
 // The session is a stateless JWT, so logging out means deleting the cookie.

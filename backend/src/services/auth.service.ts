@@ -114,9 +114,17 @@ export async function loginWithGoogleCode(code: string) {
   // googleId is the key: a user who changes their Gmail name or photo keeps
   // the same account, and the profile is refreshed on every login.
   const profile = { email: info.email.toLowerCase(), name: info.name ?? info.email, avatarUrl: info.picture ?? null };
-  return prisma.user.upsert({
-    where: { googleId: info.sub },
-    update: profile,
-    create: { googleId: info.sub, ...profile },
-  });
+  const byGoogleId = await prisma.user.findUnique({ where: { googleId: info.sub } });
+  if (byGoogleId) return prisma.user.update({ where: { id: byGoogleId.id }, data: profile });
+
+  // First Google login for an email that already has a password account:
+  // Google has verified that this person owns the email, but password signup
+  // doesn't verify emails, so the password may have been set by someone else.
+  // Link the account to Google and REMOVE the password, so only the verified
+  // owner can get in. (Trade-off in the README.)
+  const byEmail = await prisma.user.findUnique({ where: { email: profile.email } });
+  if (byEmail) {
+    return prisma.user.update({ where: { id: byEmail.id }, data: { ...profile, googleId: info.sub, passwordHash: null } });
+  }
+  return prisma.user.create({ data: { googleId: info.sub, ...profile } });
 }

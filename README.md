@@ -9,7 +9,8 @@ hourly limits. Every email is sent **at most once**, even across restarts,
 crashes and retries.
 
 - **Backend:** TypeScript, Express 5, BullMQ + Redis, Prisma + Postgres,
-  Nodemailer (Ethereal), Elasticsearch, Slack OAuth, Google OAuth.
+  Nodemailer (Ethereal), Elasticsearch, Slack OAuth, Google OAuth,
+  email/password login (bcrypt).
 - **Frontend:** React 19, Vite, TypeScript, Tailwind CSS v4, React Router,
   TanStack Query, TipTap editor.
 - **Designs:** the Figma screenshots the UI was built from are in [`design/`](design/).
@@ -45,14 +46,14 @@ crashes and retries.
 | **Slack alerts** | Users connect Slack (OAuth, incoming webhook). When a sender hits the hourly limit for their emails, they get one message per sender per hour. It never blocks sending. |
 | **Search** | Elasticsearch full-text search over recipient, subject and body. Writes are versioned, so an older status can't overwrite a newer one. `npm run reindex` rebuilds the index from Postgres. If ES is down, sending still works. |
 | **bull-board** | Queue dashboard at `/admin/queues`, for logged-in users listed in `ADMIN_EMAILS` only. |
-| **Google auth** | Google OAuth login with a signed `state` checked against a cookie (CSRF), and an httpOnly session cookie (signed JWT). Every `/api/*` route requires login, and every query is scoped to the logged-in user. |
+| **Authentication** | **Google OAuth** (a signed `state` checked against a cookie, against CSRF) or **email + password** (`POST /auth/signup`, `POST /auth/login`; bcrypt, cost from `BCRYPT_COST`, minimum 12). Both set the same httpOnly session cookie (signed JWT). Wrong email and wrong password get the same "Invalid email or password" answer with the same timing. Login and signup are rate-limited in Redis per IP and per email. Every `/api/*` route requires login, and every query is scoped to the logged-in user. |
 | **HTML bodies** | The editor's HTML is sanitized on the server (allowlist) and sent as HTML plus a plain-text fallback. Body size is capped by `MAX_BODY_BYTES`. |
 
 ### Frontend
 
 | Screen / feature | What it does |
 |---|---|
-| **Login** | "Login with Google". The email/password form is shown disabled with a note (not implemented). Clear messages for OAuth errors (`?error=…`). |
+| **Login / Sign up** | One card with two modes: **Login** (email + password) and **Sign up** (name, email, password), plus "Login with Google". Field errors appear under the field; other errors (wrong password, email taken, Google account, too many attempts) above the form. Clear messages for OAuth errors (`?error=…`). |
 | **Dashboard** | Sidebar with the ONB logo, a user card (Slack connect/disconnect, Log out), Compose, and **Scheduled** / **Sent** tabs with live counts. |
 | **Tables** | Scheduled (scheduled + sending) and Sent (sent + failed) lists: recipient, time or status pill (failed ones show the error on hover), subject + preview, Ethereal preview link, Gmail-style pagination. |
 | **Search** | Debounced (300 ms) full-text search within the open tab. |
@@ -135,7 +136,8 @@ npm install
 npm run dev                 # http://localhost:5173
 ```
 
-Open <http://localhost:5173> and log in with Google.
+Open <http://localhost:5173> and log in with Google, or click **Sign up** to
+create an email/password account.
 
 ### Google OAuth (required)
 
@@ -246,6 +248,9 @@ malformed. **Every limit is read from the environment; none is hardcoded.**
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | empty | Google OAuth client (required) |
 | `GOOGLE_CALLBACK_URL` | `http://localhost:4000/auth/google/callback` | Must match the redirect URI in Google Cloud |
 | `GOOGLE_STATE_TTL_MS`, `GOOGLE_HTTP_TIMEOUT_MS` | `600000`, `5000` | Login link lifetime; timeout for calls to Google |
+| `BCRYPT_COST` | `12` | bcrypt cost for passwords (12–16; each +1 doubles the time) |
+| `AUTH_RATE_WINDOW_MS` | `900000` | Window for the login/signup attempt limits (15 min) |
+| `AUTH_MAX_ATTEMPTS_PER_IP`, `AUTH_MAX_ATTEMPTS_PER_EMAIL` | `20`, `5` | Attempts allowed per window, per IP and per email (counted separately for login and signup) |
 | `ADMIN_EMAILS` | empty | Who may open bull-board (empty = nobody) |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | empty | Slack app (optional) |
 | `PUBLIC_BASE_URL` | empty | Public HTTPS URL of the API (ngrok), used for the Slack callback |
@@ -472,8 +477,25 @@ for it.
 
 **Auth**
 
-- **Google login only.** The email/password form is shown disabled, with a
-  note.
+- **Password signups don't verify the email** (no confirmation mail), and
+  there is **no password reset**.
+- **A later Google login with the same email takes the account over and
+  removes its password.** Google has verified that person owns the email,
+  while the password may have been set by anyone who typed that address. The
+  owner keeps everything and logs in with Google from then on. The other way
+  round is refused: signup with an email that belongs to a Google account
+  answers "Use Login with Google".
+- **Signup reveals whether an email is registered** ("already exists" /
+  "registered with Google"). Login never does. Hiding it on signup too would
+  need email verification.
+- **The rate limit counts every attempt**, successful or not (a successful
+  login resets that email's counter). The per-email limit also slows an
+  attacker who targets one account from many IPs, but it lets someone lock a
+  user's password login for up to 15 minutes by guessing; Google login still
+  works then. The IP is the socket address. Behind a reverse proxy, Express's
+  `trust proxy` would need to be set, or every user would share the proxy's IP.
+- Passwords longer than 72 bytes are rejected, because bcrypt ignores
+  everything after byte 72.
 - **Logout clears the cookie but doesn't revoke the token.** A copied cookie
   stays valid until it expires (`SESSION_TTL_MS`, 7 days). A server-side
   session table or a token denylist would fix this.

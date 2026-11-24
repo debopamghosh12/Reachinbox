@@ -23,6 +23,11 @@ export async function getMe(): Promise<Me | null> {
   }
 }
 export const logout = () => api<void>("/auth/logout", { method: "POST" });
+// Email + password: both set the same session cookie as Google login.
+export const loginWithPassword = (body: { email: string; password: string }) =>
+  api<Me>("/auth/login", { method: "POST", body });
+export const signupWithPassword = (body: { name: string; email: string; password: string }) =>
+  api<Me>("/auth/signup", { method: "POST", body });
 // Full-page navigations (OAuth needs the browser to leave our app), not fetch calls.
 export const googleLoginUrl = `${API_URL}/auth/google`;
 export const slackConnectUrl = `${API_URL}/auth/slack`;

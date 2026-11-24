@@ -47,6 +47,14 @@ const envSchema = z.object({
   SESSION_TTL_MS: positiveInt,
 
   // Google login is required: there is no other way to use the app.
+  // Email/password login. bcrypt cost 12 = 2^12 rounds (~0.3 s per hash):
+  // slow enough to make guessing expensive, fast enough for a login.
+  BCRYPT_COST: z.coerce.number().int().min(12, "BCRYPT_COST must be at least 12").max(16),
+  // Login/signup attempts allowed per window, counted in Redis per IP and per email.
+  AUTH_RATE_WINDOW_MS: positiveInt,
+  AUTH_MAX_ATTEMPTS_PER_IP: positiveInt,
+  AUTH_MAX_ATTEMPTS_PER_EMAIL: positiveInt,
+
   GOOGLE_CLIENT_ID: z.string().min(1),
   GOOGLE_CLIENT_SECRET: z.string().min(1),
   GOOGLE_CALLBACK_URL: z.url(),
