@@ -1,0 +1,19 @@
+# dependencies / build output
+node_modules/
+dist/
+
+# secrets: never commit real env files (only .env.example)
+.env
+.env.*
+!.env.example
+
+# local docker data (if bind mounts are ever used instead of named volumes)
+docker-data/
+pgdata/
+redisdata/
+esdata/
+
+# logs / OS noise
+*.log
+.DS_Store
+Thumbs.db

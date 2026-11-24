@@ -1,0 +1,108 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  googleId  String   @unique @map("google_id")
+  email     String   @unique
+  name      String
+  avatarUrl String?  @map("avatar_url")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  batches         Batch[]
+  emails          Email[]
+  slackConnection SlackConnection?
+
+  @@map("users")
+}
+
+// An Ethereal SMTP account we send from. Credentials are plaintext because
+// they are throwaway test accounts (documented trade-off).
+model Sender {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  smtpHost  String   @map("smtp_host")
+  smtpPort  Int      @map("smtp_port")
+  smtpUser  String   @map("smtp_user")
+  smtpPass  String   @map("smtp_pass")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  emails Email[]
+
+  @@map("senders")
+}
+
+// One "Schedule" click. Subject/body live here once, not copied onto 1000 rows.
+model Batch {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  subject        String
+  body           String
+  startTime      DateTime @map("start_time")
+  delayBetweenMs Int      @map("delay_between_ms")
+  hourlyLimit    Int      @map("hourly_limit")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  user   User    @relation(fields: [userId], references: [id])
+  emails Email[]
+
+  @@map("batches")
+}
+
+enum EmailStatus {
+  scheduled
+  sending
+  sent
+  failed
+}
+
+// One row per lead. Its id is also the BullMQ jobId -> one job per email, ever.
+model Email {
+  id          String      @id @default(uuid())
+  batchId     String      @map("batch_id")
+  userId      String      @map("user_id")
+  senderId    String      @map("sender_id")
+  toEmail     String      @map("to_email")
+  seq         Int // position inside the batch; keeps order when rescheduled
+  scheduledAt DateTime    @map("scheduled_at")
+  status      EmailStatus @default(scheduled)
+  attempts    Int         @default(0)
+  messageId   String?     @map("message_id")
+  previewUrl  String?     @map("preview_url")
+  error       String?
+  sentAt      DateTime?   @map("sent_at")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  batch  Batch  @relation(fields: [batchId], references: [id])
+  user   User   @relation(fields: [userId], references: [id])
+  sender Sender @relation(fields: [senderId], references: [id])
+
+  @@index([userId, status, scheduledAt]) // dashboard lists
+  @@index([status, scheduledAt]) // reconcile on boot
+  @@map("emails")
+}
+
+model SlackConnection {
+  id          String   @id @default(uuid())
+  userId      String   @unique @map("user_id")
+  teamId      String   @map("team_id")
+  teamName    String?  @map("team_name")
+  channel     String?
+  channelId   String?  @map("channel_id")
+  webhookUrl  String   @map("webhook_url")
+  accessToken String?  @map("access_token")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("slack_connections")
+}
