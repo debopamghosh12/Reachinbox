@@ -1,0 +1,46 @@
+// One typed function per backend endpoint the UI uses.
+import type {
+  EmailDetail,
+  EmailListItem,
+  ListTab,
+  Me,
+  Page,
+  ScheduleRequest,
+  ScheduleResponse,
+  SlackStatus,
+} from "../../types/api";
+import { API_URL, api } from "./client";
+
+// ---- auth ----
+export const getMe = () => api<Me>("/api/me");
+export const logout = () => api<void>("/auth/logout", { method: "POST" });
+// Full-page navigations (OAuth needs the browser to leave our app), not fetch calls.
+export const googleLoginUrl = `${API_URL}/auth/google`;
+export const slackConnectUrl = `${API_URL}/auth/slack`;
+
+// ---- emails ----
+export interface ListParams {
+  tab: ListTab;
+  page: number;
+  q: string; // empty = plain list, otherwise full-text search
+}
+
+export function listEmails({ tab, page, q }: ListParams) {
+  const query = { status: tab, page, q: q || undefined };
+  return api<Page<EmailListItem>>(q ? "/api/emails/search" : "/api/emails", { query });
+}
+
+// Sidebar counts: ask for one row and read `total`.
+export async function countEmails(tab: ListTab): Promise<number> {
+  const res = await api<Page<EmailListItem>>("/api/emails", { query: { status: tab, limit: 1 } });
+  return res.total;
+}
+
+export const getEmail = (id: string) => api<EmailDetail>(`/api/emails/${encodeURIComponent(id)}`);
+
+export const scheduleEmails = (body: ScheduleRequest) =>
+  api<ScheduleResponse>("/api/emails/schedule", { method: "POST", body });
+
+// ---- slack ----
+export const getSlackStatus = () => api<SlackStatus>("/api/slack/status");
+export const disconnectSlack = () => api<void>("/api/slack", { method: "DELETE" });
