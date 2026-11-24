@@ -4,6 +4,11 @@ import "dotenv/config";
 import nodemailer from "nodemailer";
 import { PrismaClient } from "@prisma/client";
 
+// nodemailer caches the first test account in memory and returns it on every
+// later createTestAccount() call in the same process (ETHEREAL_CACHE defaults
+// to "yes"). We need a NEW mailbox per sender, so turn the cache off.
+process.env.ETHEREAL_CACHE = "no";
+
 const prisma = new PrismaClient();
 
 async function main() {

@@ -21,6 +21,14 @@ export function getTransporter(sender: Sender): Transporter {
   return transporter;
 }
 
+// Called after a failed send. A cached transporter may hold a broken pooled
+// connection or outdated credentials; dropping it makes the retry build a
+// fresh one from the sender row it just re-read from the DB.
+export function discardTransporter(senderId: string): void {
+  transporters.get(senderId)?.close();
+  transporters.delete(senderId);
+}
+
 export function closeTransporters(): void {
   for (const transporter of transporters.values()) transporter.close();
   transporters.clear();

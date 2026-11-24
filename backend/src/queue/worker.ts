@@ -23,7 +23,13 @@ const worker = new Worker<SendEmailJobData>(EMAIL_QUEUE_NAME, processSendEmail, 
 worker.on("ready", () =>
   logger.info(`Worker ready (concurrency=${env.WORKER_CONCURRENCY}, minDelay=${env.MIN_DELAY_MS}ms)`),
 );
-worker.on("failed", (job, err) => logger.error(`[job ${job?.id}] failed: ${err.message}`));
+// "failed" fires after EVERY failed attempt; only the last one is a real failure
+// (earlier ones are already logged as warnings by the processor and will retry).
+worker.on("failed", (job, err) => {
+  if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+    logger.error(`[job ${job.id}] permanently failed after ${job.attemptsMade} attempts: ${err.message}`);
+  }
+});
 worker.on("error", (err) => logger.error("Worker error", err));
 
 // Graceful shutdown: worker.close() stops taking new jobs and waits for the

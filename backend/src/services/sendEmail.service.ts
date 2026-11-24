@@ -2,7 +2,7 @@ import nodemailer, { type SentMessageInfo } from "nodemailer";
 import type { Job } from "bullmq";
 import { prisma } from "../config/prisma";
 import type { SendEmailJobData } from "../queue/emailQueue";
-import { buildMessageId, getTransporter } from "./mailer";
+import { buildMessageId, discardTransporter, getTransporter } from "./mailer";
 import { logger } from "../utils/logger";
 
 // The BullMQ processor: runs when a job's delay has elapsed.
@@ -43,6 +43,7 @@ export async function processSendEmail(job: Job<SendEmailJobData>) {
       messageId,
     });
   } catch (err) {
+    discardTransporter(email.senderId);
     const message = err instanceof Error ? err.message : String(err);
     // attemptsMade = attempts that already failed before this one.
     const isFinalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);

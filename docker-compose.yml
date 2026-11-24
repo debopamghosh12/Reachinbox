@@ -6,7 +6,9 @@ services:
       POSTGRES_PASSWORD: outbox
       POSTGRES_DB: outbox
     ports:
-      - "5432:5432"
+      # Host port 5433: a native Postgres on the host commonly owns 5432
+      # and would silently answer `localhost:5432` instead of this container.
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
