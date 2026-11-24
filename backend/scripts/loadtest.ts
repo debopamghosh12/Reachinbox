@@ -1,7 +1,7 @@
 // Load test: schedules N emails "at once" through the real API, waits until the
 // worker(s) have processed every due job, then checks the hourly limit held.
 //
-//   npm run loadtest -- --leads 1200 --hourly-limit 5 [--reset-counters] [--keep]
+//   npm run loadtest -- --leads 1200 --hourly-limit 5 [--delay-ms 0] [--reset-counters] [--keep]
 //
 // Run the API and worker(s) with SMTP_DRY_RUN=true (and a small MIN_DELAY_MS) first.
 // --reset-counters deletes this hour's rate-limit keys for all senders (dev only).
@@ -21,6 +21,8 @@ const { values: args } = parseArgs({
   options: {
     leads: { type: "string", default: "1200" },
     "hourly-limit": { type: "string", default: "5" },
+    // delayBetweenMs of the request: spreads the send times (used by the restart test)
+    "delay-ms": { type: "string", default: "0" },
     "timeout-s": { type: "string", default: "300" },
     "reset-counters": { type: "boolean", default: false },
     keep: { type: "boolean", default: false },
@@ -63,7 +65,7 @@ async function main() {
   const res = await fetch(`http://localhost:${env.PORT}/api/emails/schedule`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Cookie: cookie },
-    body: JSON.stringify({ subject: `Load test ${tag}`, body: "load test", leads, startTime: new Date().toISOString(), delayBetweenMs: 0, hourlyLimit: LIMIT }),
+    body: JSON.stringify({ subject: `Load test ${tag}`, body: "load test", leads, startTime: new Date().toISOString(), delayBetweenMs: Number(args["delay-ms"]), hourlyLimit: LIMIT }),
   });
   const scheduleMs = Math.round(performance.now() - t0);
   const body = (await res.json()) as { batchId: string; count: number };
@@ -72,18 +74,20 @@ async function main() {
   check("schedule API handles N leads", body.count === N, `${body.count} rows in ${scheduleMs}ms`);
   const batchId = body.batchId;
 
-  // 2) Wait until nothing is due any more (every job either sent or pushed to the future).
+  // 2) Wait until every email planned for THIS hour is finished: sent, or
+  //    pushed to a later hour window by the rate limiter. (With --delay-ms some
+  //    are not due yet, so "nothing due right now" would stop too early.)
   const deadline = Date.now() + Number(args["timeout-s"]) * 1000;
   const tWait = Date.now();
   let due = N;
   while (Date.now() < deadline) {
-    due = await prisma.email.count({ where: { batchId, status: { in: ["scheduled", "sending"] }, scheduledAt: { lte: new Date() } } });
+    due = await prisma.email.count({ where: { batchId, status: { in: ["scheduled", "sending"] }, scheduledAt: { lt: new Date(window.end) } } });
     const sent = await prisma.email.count({ where: { batchId, status: "sent" } });
     process.stdout.write(`\r  waiting... due=${due} sent=${sent}   `);
     if (due === 0) break;
     await sleep(1000);
   }
-  console.log(`\nAll due jobs processed in ${Math.round((Date.now() - tWait) / 1000)}s`);
+  console.log(`\nAll jobs for this hour processed in ${Math.round((Date.now() - tWait) / 1000)}s`);
   check("every due job was processed", due === 0, `due remaining = ${due}`);
 
   // 3) Collect results.
@@ -114,6 +118,12 @@ async function main() {
   }
   const windows = [...new Set([...perWindow.keys()].map((k) => k.split("|")[0]))].sort();
   console.log(`Moved jobs spread over ${windows.length} future windows (${windows[0]} .. ${windows[windows.length - 1]})`);
+  // How many jobs each future window got (all senders together), e.g. "15 x 78, 15 x 1".
+  const perWindowTotal = new Map<string, number>();
+  for (const [k, n] of perWindow) perWindowTotal.set(k.split("|")[0], (perWindowTotal.get(k.split("|")[0]) ?? 0) + n);
+  const histogram = new Map<number, number>();
+  for (const n of perWindowTotal.values()) histogram.set(n, (histogram.get(n) ?? 0) + 1);
+  console.log(`Jobs per future window: ${[...histogram].map(([jobs, count]) => `${jobs} jobs x ${count} windows`).join(", ")}`);
   const maxPerSenderWindow = Math.max(0, ...perWindow.values());
   check("future windows planned within limit", maxPerSenderWindow <= effectiveLimit, `max ${maxPerSenderWindow} per sender per window`);
 
