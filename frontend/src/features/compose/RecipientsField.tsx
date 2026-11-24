@@ -18,7 +18,9 @@ interface RecipientsFieldProps {
 export function RecipientsField({ id, value, onChange, error }: RecipientsFieldProps) {
   const [draft, setDraft] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const [notice, setNotice] = useState<{ text: string; tone: "ok" | "warn" } | null>(null);
+  // "info" = the upload/paste summary (neutral; `skipped` shown in muted amber),
+  // "warn" = a problem with what was just typed.
+  const [notice, setNotice] = useState<{ text: string; tone: "info" | "warn"; skipped?: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Parses `text`, adds the valid new addresses, and returns what was skipped.
@@ -68,9 +70,11 @@ export function RecipientsField({ id, value, onChange, error }: RecipientsFieldP
 
   function report({ emails, invalid, duplicates }: ReturnType<typeof parseRecipients>) {
     const skipped = invalid.length + duplicates;
-    const parts = [`${emails.length} email address${emails.length === 1 ? "" : "es"} detected`];
-    if (skipped) parts.push(`${skipped} skipped (${duplicates} duplicate, ${invalid.length} invalid)`);
-    setNotice({ text: parts.join(" · "), tone: skipped || !emails.length ? "warn" : "ok" });
+    setNotice({
+      text: `${emails.length} email address${emails.length === 1 ? "" : "es"} detected`,
+      tone: "info",
+      skipped: skipped ? `${skipped} skipped (${duplicates} duplicate, ${invalid.length} invalid)` : undefined,
+    });
   }
 
   const shown = expanded ? value : value.slice(0, VISIBLE_CHIPS);
@@ -138,7 +142,15 @@ export function RecipientsField({ id, value, onChange, error }: RecipientsFieldP
         {error ? (
           <span className="text-red-600">{error}</span>
         ) : (
-          notice && <span className={notice.tone === "ok" ? "text-green-700" : "text-orange-700"}>{notice.text}</span>
+          notice &&
+          (notice.tone === "warn" ? (
+            <span className="text-orange-700">{notice.text}</span>
+          ) : (
+            <span className="text-gray-600">
+              {notice.text}
+              {notice.skipped && <span className="text-amber-600"> · {notice.skipped}</span>}
+            </span>
+          ))
         )}
       </p>
     </div>

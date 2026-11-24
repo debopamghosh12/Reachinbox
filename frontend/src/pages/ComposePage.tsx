@@ -193,14 +193,17 @@ function NumberField({ id, label, unit, value, error, onChange }: NumberFieldPro
     <div>
       <div className="flex items-center gap-3">
         <label htmlFor={id} className="text-sm text-gray-900">{label}</label>
+        {/* A text input with a numeric keypad, not type="number": a number input
+            changes its value when the mouse wheel scrolls over it, which once
+            turned a typed 2 into 20 unnoticed. Non-digits are dropped as you type. */}
         <input
           id={id}
-          type="number"
+          type="text"
           inputMode="numeric"
-          min={0}
-          step={1}
+          pattern="[0-9]*"
+          autoComplete="off"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))}
           placeholder="00"
           aria-invalid={error ? true : undefined}
           aria-describedby={`${id}-unit${error ? ` ${id}-error` : ""}`}
