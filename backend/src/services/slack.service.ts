@@ -1,15 +1,14 @@
 // Slack OAuth v2 (incoming-webhook scope) + posting to a stored webhook.
 // SECURITY: webhook URLs, tokens and the client secret are credentials.
 // They are never logged or returned by the API; errors carry status codes only.
-import jwt from "jsonwebtoken";
 import { env } from "../config/env";
 import { prisma } from "../config/prisma";
 import { AppError } from "../utils/AppError";
+import { signToken, verifyToken } from "../utils/tokens";
 
 const AUTHORIZE_URL = "https://slack.com/oauth/v2/authorize";
 const TOKEN_URL = "https://slack.com/api/oauth.v2.access";
 const REVOKE_URL = "https://slack.com/api/auth.revoke";
-const STATE_AUDIENCE = "slack-oauth"; // a state token is useless anywhere else
 
 export function isSlackConfigured(): boolean {
   return Boolean(env.SLACK_CLIENT_ID && env.SLACK_CLIENT_SECRET && env.PUBLIC_BASE_URL);
@@ -28,22 +27,12 @@ function redirectUri(): string {
 // and it stops working after SLACK_STATE_TTL_MS.
 
 export function createState(userId: string): string {
-  return jwt.sign({}, env.JWT_SECRET, {
-    subject: userId,
-    audience: STATE_AUDIENCE,
-    expiresIn: Math.floor(env.SLACK_STATE_TTL_MS / 1000),
-  });
+  return signToken("slack-oauth", userId, env.SLACK_STATE_TTL_MS);
 }
 
 // Returns the user id, or null if the state is missing, forged or expired.
 export function verifyState(state: unknown): string | null {
-  if (typeof state !== "string" || !state) return null;
-  try {
-    const payload = jwt.verify(state, env.JWT_SECRET, { audience: STATE_AUDIENCE });
-    return typeof payload === "object" && typeof payload.sub === "string" ? payload.sub : null;
-  } catch {
-    return null;
-  }
+  return verifyToken("slack-oauth", state);
 }
 
 export function buildAuthorizeUrl(userId: string): string {

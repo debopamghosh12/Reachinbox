@@ -14,7 +14,8 @@ const nonNegativeInt = z.coerce.number().int().nonnegative();
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
   PORT: positiveInt,
-  FRONTEND_URL: z.url(),
+  // No trailing slash: CORS compares the origin as an exact string.
+  FRONTEND_URL: z.url().transform((u) => u.replace(/\/+$/, "")),
   JSON_BODY_LIMIT: z.string().min(1), // e.g. "2mb" - bounds the leads payload
 
   DATABASE_URL: z.string().min(1),
@@ -39,8 +40,23 @@ const envSchema = z.object({
   PAGE_SIZE_DEFAULT: positiveInt,
   PAGE_SIZE_MAX: positiveInt,
 
-  // Used to sign short-lived values (the Slack OAuth state now, sessions in Phase 4).
+  // Signs session cookies and OAuth states (see utils/tokens.ts).
   JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+  SESSION_TTL_MS: positiveInt,
+
+  // Google login is required: there is no other way to use the app.
+  GOOGLE_CLIENT_ID: z.string().min(1),
+  GOOGLE_CLIENT_SECRET: z.string().min(1),
+  GOOGLE_CALLBACK_URL: z.url(),
+  GOOGLE_STATE_TTL_MS: positiveInt,
+  GOOGLE_HTTP_TIMEOUT_MS: positiveInt,
+
+  // Comma-separated emails allowed to open bull-board (/admin/queues).
+  // Empty = nobody, which is the safe default.
+  ADMIN_EMAILS: z
+    .string()
+    .optional()
+    .transform((v) => (v ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean)),
 
   ELASTICSEARCH_URL: z.url(),
   ELASTICSEARCH_INDEX: z.string().min(1),

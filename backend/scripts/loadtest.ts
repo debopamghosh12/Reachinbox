@@ -5,6 +5,8 @@
 //
 // Run the API and worker(s) with SMTP_DRY_RUN=true (and a small MIN_DELAY_MS) first.
 // --reset-counters deletes this hour's rate-limit keys for all senders (dev only).
+// The API requires login, so the test runs as its own user (loadtest@outbox.test)
+// with a session cookie signed by this script. Real users' data is never touched.
 // Without --keep, the test's rows and jobs are deleted at the end.
 import { parseArgs } from "node:util";
 import { env } from "../src/config/env";
@@ -13,6 +15,7 @@ import { redis } from "../src/config/redis";
 import { es } from "../src/config/elasticsearch";
 import { emailQueue } from "../src/queue/emailQueue";
 import { hourWindow } from "../src/queue/rateLimiter";
+import { SESSION_COOKIE, createSessionToken } from "../src/services/auth.service";
 
 const { values: args } = parseArgs({
   options: {
@@ -30,7 +33,18 @@ const results: { check: string; ok: boolean; detail: string }[] = [];
 const check = (name: string, ok: boolean, detail: string) => results.push({ check: name, ok, detail });
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// A dedicated test user, so the load test never touches a real user's data.
+async function loadTestSessionCookie(): Promise<string> {
+  const user = await prisma.user.upsert({
+    where: { googleId: "loadtest-user" },
+    update: {},
+    create: { googleId: "loadtest-user", email: "loadtest@outbox.test", name: "Load Test" },
+  });
+  return `${SESSION_COOKIE}=${createSessionToken(user.id)}`;
+}
+
 async function main() {
+  const cookie = await loadTestSessionCookie();
   const senders = await prisma.sender.findMany({ orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
   const window = hourWindow();
   const effectiveLimit = Math.min(LIMIT, env.MAX_EMAILS_PER_HOUR_PER_SENDER);
@@ -48,7 +62,7 @@ async function main() {
   const t0 = performance.now();
   const res = await fetch(`http://localhost:${env.PORT}/api/emails/schedule`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", Cookie: cookie },
     body: JSON.stringify({ subject: `Load test ${tag}`, body: "load test", leads, startTime: new Date().toISOString(), delayBetweenMs: 0, hourlyLimit: LIMIT }),
   });
   const scheduleMs = Math.round(performance.now() - t0);

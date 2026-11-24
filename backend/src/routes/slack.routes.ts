@@ -1,6 +1,6 @@
 import { Router, type Response } from "express";
 import { env } from "../config/env";
-import { devUser } from "../middleware/devUser"; // TODO(Phase 4): replace with requireAuth
+import { requireAuth } from "../middleware/requireAuth";
 import {
   buildAuthorizeUrl,
   connectWithCode,
@@ -18,12 +18,12 @@ export const slackAuthRouter = Router();
 // The browser always ends up back in the app, with a flag the UI can show.
 function backToApp(res: Response, result: "connected" | "error", reason?: string) {
   const params = new URLSearchParams({ slack: result, ...(reason && { reason }) });
-  res.redirect(`${env.FRONTEND_URL}/?${params}`);
+  res.redirect(`${env.FRONTEND_URL}/dashboard?${params}`);
 }
 
-// Step 1: send the user to Slack's "Allow" screen.
-// TODO(Phase 4): devUser -> requireAuth (the logged-in user starts the flow).
-slackAuthRouter.get("/", devUser, (req, res) => {
+// Step 1: send the logged-in user to Slack's "Allow" screen. This request is
+// on localhost, so the session cookie is present and says who the user is.
+slackAuthRouter.get("/", requireAuth, (req, res) => {
   if (!isSlackConfigured()) return backToApp(res, "error", "not_configured");
   res.redirect(buildAuthorizeUrl(getUserId(req)));
 });
@@ -48,7 +48,7 @@ slackAuthRouter.get("/callback", async (req, res) => {
   backToApp(res, "connected");
 });
 
-// JSON API, mounted at /api/slack behind the (dev) auth middleware.
+// JSON API, mounted at /api/slack (behind requireAuth).
 export const slackApiRouter = Router();
 
 slackApiRouter.get("/status", async (req, res) => {

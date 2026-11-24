@@ -7,12 +7,9 @@ import { es } from "./config/elasticsearch";
 import { ensureIndex } from "./services/search.service";
 import { emailQueue } from "./queue/emailQueue";
 import { reconcile } from "./queue/reconcile";
-import { ensureDevUser } from "./middleware/devUser";
 import { logger } from "./utils/logger";
 
 async function main() {
-  await ensureDevUser(); // TODO(Phase 4): remove with the dev user
-
   const server = createApp().listen(env.PORT, () => {
     logger.info(`API listening on http://localhost:${env.PORT} (bull-board: /admin/queues)`);
   });
