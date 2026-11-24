@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { env } from "../config/env";
 import { AppError } from "../utils/AppError";
+import { htmlToText, sanitizeBody } from "../utils/html";
 
 export const scheduleSchema = z.object({
   subject: z.string().trim().min(1),
@@ -43,6 +44,22 @@ export function normalizeLeads(raw: string[]): { leads: string[]; duplicatesRemo
   return { leads: [...unique], duplicatesRemoved: raw.length - unique.size };
 }
 
+// Size check first (on what the client sent), then sanitize HTML, then make
+// sure something readable is left (a body of only "<script>…" ends up empty).
+export function cleanBody(raw: string): string {
+  const bytes = Buffer.byteLength(raw, "utf8");
+  if (bytes > env.MAX_BODY_BYTES) {
+    throw new AppError(
+      400,
+      `Body is too large: ${Math.ceil(bytes / 1024)} KB (max ${Math.floor(env.MAX_BODY_BYTES / 1024)} KB)`,
+      "BodyTooLarge",
+    );
+  }
+  const body = sanitizeBody(raw);
+  if (!htmlToText(body).trim()) throw new AppError(400, "Body is empty", "EmptyBody");
+  return body;
+}
+
 export const listQuerySchema = z.object({
   status: z.enum(["scheduled", "sent", "failed"]).optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -57,3 +74,7 @@ export const searchQuerySchema = listQuerySchema.extend({
 });
 
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
+
+// GET /api/emails/:id. A malformed id can't belong to anyone, so the route
+// answers it with the same 404 as "not yours".
+export const emailIdSchema = z.uuid();

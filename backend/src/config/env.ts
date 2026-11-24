@@ -29,6 +29,8 @@ const envSchema = z.object({
   JOB_RETENTION_HOURS: positiveInt,
   STUCK_SENDING_THRESHOLD_MS: positiveInt,
   MAX_LEADS_PER_REQUEST: positiveInt,
+  // Largest email body accepted, in bytes (checked before sanitizing).
+  MAX_BODY_BYTES: positiveInt,
   // Spacing (per seq number) added when a job is pushed to a later hour, to keep order.
   RESCHEDULE_SEQ_OFFSET_MS: nonNegativeInt,
   RECONCILE_BATCH_SIZE: positiveInt,

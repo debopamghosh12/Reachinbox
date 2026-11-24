@@ -9,6 +9,7 @@ import { buildMessageId, discardTransporter, getTransporter } from "./mailer";
 import { onRateLimitHit } from "./notifications.service";
 import { syncToSearch } from "./search.service";
 import { logger } from "../utils/logger";
+import { htmlToText, isHtml } from "../utils/html";
 
 type EmailWithRelations = Email & { batch: Batch; sender: Sender };
 
@@ -100,7 +101,11 @@ async function send(job: Job<SendEmailJobData>, email: EmailWithRelations) {
         from: `"${email.sender.name}" <${email.sender.email}>`,
         to: email.toEmail,
         subject: email.batch.subject,
-        text: email.batch.body,
+        // HTML bodies go out as multipart/alternative: the html part plus a
+        // plain-text fallback for clients that don't show HTML. Old
+        // plain-text bodies go out as text only, exactly as before.
+        text: htmlToText(email.batch.body),
+        ...(isHtml(email.batch.body) && { html: email.batch.body }),
         messageId,
       });
       // Ethereal gives a web URL where the captured message can be viewed.

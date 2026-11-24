@@ -2,6 +2,7 @@ import type { EmailStatus, Prisma } from "@prisma/client";
 import { prisma } from "../config/prisma";
 import type { ListQuery, SearchQuery } from "../schemas/email.schemas";
 import { searchEmailIds } from "./search.service";
+import { isHtml, toPreview } from "../utils/html";
 
 // The "Scheduled" tab also shows rows currently being sent - from the user's
 // point of view they haven't been sent yet.
@@ -11,25 +12,44 @@ const STATUS_FILTER: Record<NonNullable<ListQuery["status"]>, EmailStatus[]> = {
   failed: ["failed"],
 };
 
+// Length of the one-line plain-text preview in list rows (a display choice,
+// not a sending limit).
+const PREVIEW_CHARS = 140;
+
 const listInclude = {
-  batch: { select: { subject: true } },
-  sender: { select: { email: true } },
+  batch: { select: { subject: true, body: true } },
+  sender: { select: { email: true, name: true } },
 } satisfies Prisma.EmailInclude;
 
 type ListRow = Prisma.EmailGetPayload<{ include: typeof listInclude }>;
 
-// One item shape for every list-like endpoint.
+// One item shape for every list-like endpoint. The full body stays out of
+// lists (a page of 100 rows x a large body adds up); the detail endpoint has it.
 function toListItem(e: ListRow) {
   return {
     id: e.id,
     toEmail: e.toEmail,
     subject: e.batch.subject,
+    bodyPreview: toPreview(e.batch.body, PREVIEW_CHARS),
     senderEmail: e.sender.email,
     status: e.status,
     scheduledAt: e.scheduledAt,
     sentAt: e.sentAt,
     previewUrl: e.previewUrl,
     error: e.error,
+  };
+}
+
+// The detail view: the list item plus the full body. The where clause has
+// BOTH id and userId, so another user's email is simply "not found".
+export async function getEmail(userId: string, id: string) {
+  const row = await prisma.email.findFirst({ where: { id, userId }, include: listInclude });
+  if (!row) return null;
+  return {
+    ...toListItem(row),
+    senderName: row.sender.name,
+    body: row.batch.body, // already sanitized when it was scheduled
+    bodyFormat: isHtml(row.batch.body) ? ("html" as const) : ("text" as const),
   };
 }
 

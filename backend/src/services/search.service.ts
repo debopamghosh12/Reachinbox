@@ -5,6 +5,7 @@ import { es } from "../config/elasticsearch";
 import { env } from "../config/env";
 import { AppError } from "../utils/AppError";
 import { logger } from "../utils/logger";
+import { htmlToText } from "../utils/html";
 
 const INDEX = env.ELASTICSEARCH_INDEX;
 
@@ -90,7 +91,7 @@ export async function indexEmails(items: { email: EmailForIndex; batch: BatchTex
         batchId: email.batchId,
         to: email.toEmail,
         subject: batch.subject,
-        body: batch.body,
+        body: htmlToText(batch.body), // index words, not tags ("strong" shouldn't match <strong>)
         status: email.status,
         scheduledAt: email.scheduledAt,
         sentAt: email.sentAt,
