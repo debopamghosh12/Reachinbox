@@ -30,10 +30,17 @@ export function listEmails({ tab, page, q }: ListParams) {
   return api<Page<EmailListItem>>(q ? "/api/emails/search" : "/api/emails", { query });
 }
 
-// Sidebar counts: ask for one row and read `total`.
-export async function countEmails(tab: ListTab): Promise<number> {
+// Sidebar counts: ask for one row and read `total`. The row comes along for
+// free: for "scheduled" the API sorts by scheduledAt (soonest first), so it is
+// the next email due, which is what list polling is timed on.
+export interface EmailSummary {
+  total: number;
+  first: EmailListItem | null;
+}
+
+export async function getEmailSummary(tab: ListTab): Promise<EmailSummary> {
   const res = await api<Page<EmailListItem>>("/api/emails", { query: { status: tab, limit: 1 } });
-  return res.total;
+  return { total: res.total, first: res.items[0] ?? null };
 }
 
 export const getEmail = (id: string) => api<EmailDetail>(`/api/emails/${encodeURIComponent(id)}`);

@@ -3,12 +3,12 @@ import { Link } from "react-router";
 import { buttonClasses } from "../../components/ui/Button";
 import { Logo } from "../../components/ui/Logo";
 import { NavItem } from "../../components/ui/NavItem";
-import { useEmailCount } from "../emails/useEmails";
+import { useEmailSummary } from "../emails/useEmails";
 import { UserMenu } from "./UserMenu";
 
 export function Sidebar() {
-  const scheduled = useEmailCount("scheduled");
-  const sent = useEmailCount("sent");
+  const scheduled = useEmailSummary("scheduled");
+  const sent = useEmailSummary("sent");
 
   return (
     <aside className="flex w-64 shrink-0 flex-col gap-4 px-3 pt-5">
@@ -22,8 +22,8 @@ export function Sidebar() {
       <nav aria-label="Mailboxes">
         <p className="mb-1.5 px-3 text-[11px] font-medium tracking-wide text-[#B6B6B6] uppercase">Core</p>
         <div className="flex flex-col gap-0.5">
-          <NavItem to="/dashboard" icon={Clock} label="Scheduled" count={scheduled.data} />
-          <NavItem to="/dashboard/sent" icon={Send} label="Sent" count={sent.data} />
+          <NavItem to="/dashboard" icon={Clock} label="Scheduled" count={scheduled.data?.total} />
+          <NavItem to="/dashboard/sent" icon={Send} label="Sent" count={sent.data?.total} />
         </div>
       </nav>
     </aside>
