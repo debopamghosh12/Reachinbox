@@ -8,6 +8,7 @@ import { BodyEditor } from "../features/compose/BodyEditor";
 import { RecipientsField } from "../features/compose/RecipientsField";
 import { SendLaterPopover } from "../features/compose/SendLaterPopover";
 import { scheduleErrorToFields, type ComposeField, type FieldErrors } from "../features/compose/scheduleErrors";
+import { useScrolled } from "../hooks/useScrolled";
 import { scheduleEmails } from "../lib/api/endpoints";
 import { cn } from "../lib/cn";
 import { formatShortDate } from "../lib/format";
@@ -46,6 +47,7 @@ export function ComposePage() {
   const navigate = useNavigate();
   const toast = useToast();
   const queryClient = useQueryClient();
+  const scrolled = useScrolled();
 
   const schedule = useMutation({
     mutationFn: (body: ScheduleRequest) => scheduleEmails(body),
@@ -91,7 +93,9 @@ export function ComposePage() {
 
   return (
     <div className="min-h-screen pb-16">
-      <header className="flex items-center gap-3 px-4 py-4">
+      {/* Sticky so Send / Send Later stay reachable in a long email. z-30 keeps it
+          (and the Send Later popover inside it) above the editor while scrolling. */}
+      <header className={cn("sticky top-0 z-30 flex items-center gap-3 border-b bg-white px-4 py-4 transition-colors", scrolled ? "border-line" : "border-transparent")}>
         <Link to="/dashboard" aria-label="Back to Scheduled" className="rounded-full p-1.5 text-gray-900 hover:bg-gray-100 focus-visible:outline-2 focus-visible:outline-green-600">
           <ArrowLeft className="h-5 w-5" aria-hidden />
         </Link>

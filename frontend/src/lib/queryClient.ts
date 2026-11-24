@@ -10,6 +10,7 @@ export const queryKeys = {
   me: ["me"] as const,
   emails: ["emails"] as const, // prefix of every list/count/detail key below
   list: (params: object) => ["emails", "list", params] as const,
+  counts: ["emails", "count"] as const, // prefix of both sidebar counts
   count: (tab: string) => ["emails", "count", tab] as const,
   detail: (id: string) => ["emails", "detail", id] as const,
   slack: ["slack"] as const,
