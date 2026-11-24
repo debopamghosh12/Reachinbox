@@ -4,6 +4,8 @@ import { Worker } from "bullmq";
 import { env } from "../config/env";
 import { prisma } from "../config/prisma";
 import { createRedisConnection, redis } from "../config/redis";
+import { es } from "../config/elasticsearch";
+import { ensureIndex } from "../services/search.service";
 import { EMAIL_QUEUE_NAME, emailQueue, type SendEmailJobData } from "./emailQueue";
 import { reconcile } from "./reconcile";
 import { processSendEmail } from "../services/sendEmail.service";
@@ -38,6 +40,7 @@ worker.on("error", (err) => logger.error("Worker error", err));
 // Also reconcile from the worker, so a worker-only restart recovers too.
 // Running it here AND in the API at the same time is safe (see reconcile.ts).
 reconcile().catch((err) => logger.error("[reconcile] failed", err));
+void ensureIndex();
 
 // Graceful shutdown: worker.close() stops fetching new jobs and waits for the
 // active ones to finish, so a normal restart never leaves a row in 'sending'.
@@ -58,7 +61,7 @@ async function shutdown(signal: string) {
   else logger.info("All in-flight jobs finished");
 
   closeTransporters();
-  await Promise.allSettled([emailQueue.close(), prisma.$disconnect(), connection.quit(), redis.quit()]);
+  await Promise.allSettled([emailQueue.close(), prisma.$disconnect(), connection.quit(), redis.quit(), es.close()]);
   process.exit(0);
 }
 

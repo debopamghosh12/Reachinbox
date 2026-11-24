@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "../config/prisma";
 import { buildSendJob, emailQueue } from "../queue/emailQueue";
 import type { ScheduleInput } from "../schemas/email.schemas";
+import { syncToSearch } from "./search.service";
 import { AppError } from "../utils/AppError";
 
 export async function scheduleEmails(userId: string, input: ScheduleInput, leads: string[]) {
@@ -14,6 +15,8 @@ export async function scheduleEmails(userId: string, input: ScheduleInput, leads
   // A start time in the past means "start now".
   const base = Math.max(input.startTime.getTime(), Date.now());
   const batchId = randomUUID();
+  // Set explicitly (instead of DB defaults) so we know the exact values for the search index.
+  const createdAt = new Date();
 
   // We generate the ids ourselves (instead of letting Postgres do it) so we
   // know every email id up front: it becomes the BullMQ jobId, and createMany
@@ -26,6 +29,8 @@ export async function scheduleEmails(userId: string, input: ScheduleInput, leads
     toEmail,
     seq: i,
     scheduledAt: new Date(base + i * input.delayBetweenMs),
+    createdAt,
+    updatedAt: createdAt,
   }));
 
   // ONE transaction, two statements: the batch row + a single multi-row
@@ -51,6 +56,9 @@ export async function scheduleEmails(userId: string, input: ScheduleInput, leads
   // reconcile() re-adds them on the next boot.
   const now = Date.now();
   await emailQueue.addBulk(rows.map((row) => buildSendJob(row, now)));
+
+  // Search index: bulk API, in the background - never delays this response.
+  syncToSearch(rows.map((row) => ({ email: { ...row, status: "scheduled", sentAt: null }, batch: input })));
 
   return {
     batchId,

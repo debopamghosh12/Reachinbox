@@ -5,6 +5,7 @@ import { ExpressAdapter } from "@bull-board/express";
 import { env } from "./config/env";
 import { emailQueue } from "./queue/emailQueue";
 import { emailsRouter } from "./routes/emails.routes";
+import { slackApiRouter, slackAuthRouter } from "./routes/slack.routes";
 import { requestLogger } from "./middleware/requestLogger";
 import { errorHandler, notFound } from "./middleware/errorHandler";
 import { devUser } from "./middleware/devUser"; // TODO(Phase 4): replace with requireAuth
@@ -25,7 +26,9 @@ export function createApp() {
   createBullBoard({ queues: [new BullMQAdapter(emailQueue)], serverAdapter: boardAdapter });
   app.use("/admin/queues", boardAdapter.getRouter());
 
+  app.use("/auth/slack", slackAuthRouter); // browser redirects (OAuth)
   app.use("/api/emails", devUser, emailsRouter);
+  app.use("/api/slack", devUser, slackApiRouter);
 
   // Order matters: these run only if no route above answered.
   app.use(notFound);

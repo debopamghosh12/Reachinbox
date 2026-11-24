@@ -7,9 +7,15 @@ import type { SendEmailJobData } from "../queue/emailQueue";
 import { nextRunAt, tryConsumeSlot } from "../queue/rateLimiter";
 import { buildMessageId, discardTransporter, getTransporter } from "./mailer";
 import { onRateLimitHit } from "./notifications.service";
+import { syncToSearch } from "./search.service";
 import { logger } from "../utils/logger";
 
 type EmailWithRelations = Email & { batch: Batch; sender: Sender };
+
+// Mirror a status change into the search index (background, never throws).
+function sync(row: Email, batch: Batch) {
+  syncToSearch([{ email: row, batch }]);
+}
 
 // The BullMQ processor: runs when a job's delay has elapsed.
 // `token` identifies this worker's lock on the job; moveToDelayed needs it.
@@ -35,6 +41,7 @@ export async function processSendEmail(job: Job<SendEmailJobData>, token?: strin
     where: { id: emailId },
     include: { batch: true, sender: true },
   });
+  sync(email, email.batch); // status: sending
 
   // 2) HOURLY LIMIT. The request's hourlyLimit can only lower the global cap.
   const limit = Math.min(env.MAX_EMAILS_PER_HOUR_PER_SENDER, email.batch.hourlyLimit);
@@ -62,16 +69,18 @@ async function postpone(
   // The other order could leave the row stuck in 'sending' with a delayed job
   // that would then skip it forever.
   // attempts is decremented because this claim was not a send attempt.
-  await prisma.email.update({
+  const updated = await prisma.email.update({
     where: { id: email.id },
     data: { status: "scheduled", scheduledAt: new Date(runAt), attempts: { decrement: 1 } },
   });
   await job.moveToDelayed(runAt, token);
+  sync(updated, email.batch); // status: scheduled, new scheduledAt
 
   logger.info(
     `[job ${job.id}] sender ${email.sender.email} at ${slot.count}/${limit} for ${slot.window.key} -> moved to ${new Date(runAt).toISOString()}`,
   );
-  await onRateLimitHit(email.senderId, slot.window, email.userId);
+  // Not awaited: a slow Slack must never hold up the queue.
+  void onRateLimitHit({ senderId: email.senderId, senderEmail: email.sender.email, userId: email.userId, limit, window: slot.window });
 
   // Tells BullMQ "I moved this job myself" - it is not counted as a failure.
   throw new DelayedError();
@@ -105,18 +114,20 @@ async function send(job: Job<SendEmailJobData>, email: EmailWithRelations) {
     const isFinalAttempt = job.attemptsMade + 1 >= (job.opts.attempts ?? 1);
     // Not final: put the row back to 'scheduled' so the retry can claim it again.
     // (The hourly slot stays used: we can't be sure the server didn't count it.)
-    await prisma.email.update({
+    const updated = await prisma.email.update({
       where: { id: email.id },
       data: { status: isFinalAttempt ? "failed" : "scheduled", error: message },
     });
+    sync(updated, email.batch);
     logger.warn(`[job ${job.id}] send failed (attempt ${job.attemptsMade + 1}, final=${isFinalAttempt}): ${message}`);
     throw err; // let BullMQ apply attempts + exponential backoff
   }
 
-  await prisma.email.update({
+  const sentRow = await prisma.email.update({
     where: { id: email.id },
     data: { status: "sent", sentAt: new Date(), previewUrl, messageId, error: null },
   });
+  sync(sentRow, email.batch);
 
   logger.info(
     `[job ${job.id}] sent to ${email.toEmail} via ${email.sender.email}${env.SMTP_DRY_RUN ? " (dry run)" : ` -> ${previewUrl}`}`,

@@ -7,6 +7,7 @@
 import { env } from "../config/env";
 import { prisma } from "../config/prisma";
 import { buildSendJob, emailQueue } from "./emailQueue";
+import { syncToSearch } from "../services/search.service";
 import { logger } from "../utils/logger";
 
 export async function reconcile() {
@@ -30,14 +31,25 @@ export async function reconcile() {
 // that is merely slow on another live worker is never touched.
 async function failStuckSendingRows(): Promise<number> {
   const cutoff = new Date(Date.now() - env.STUCK_SENDING_THRESHOLD_MS);
-  const result = await prisma.email.updateMany({
-    // updatedAt is set by the claim (status -> 'sending'), so it's "time in sending".
+  // updatedAt is set by the claim (status -> 'sending'), so it's "time in sending".
+  const stuck = await prisma.email.findMany({
     where: { status: "sending", updatedAt: { lt: cutoff } },
+    select: { id: true },
+  });
+  if (stuck.length === 0) return 0;
+
+  const ids = stuck.map((r) => r.id);
+  // Re-check status in the UPDATE itself, in case one finished in the meantime.
+  const result = await prisma.email.updateMany({
+    where: { id: { in: ids }, status: "sending" },
     data: {
       status: "failed",
       error: "Interrupted while sending (worker crash). Not retried automatically to avoid a duplicate - check and resend if needed.",
     },
   });
+
+  const failed = await prisma.email.findMany({ where: { id: { in: ids }, status: "failed" }, include: { batch: true } });
+  syncToSearch(failed.map((row) => ({ email: row, batch: row.batch })));
   return result.count;
 }
 

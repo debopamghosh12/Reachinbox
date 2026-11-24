@@ -38,9 +38,29 @@ const envSchema = z.object({
 
   PAGE_SIZE_DEFAULT: positiveInt,
   PAGE_SIZE_MAX: positiveInt,
+
+  // Used to sign short-lived values (the Slack OAuth state now, sessions in Phase 4).
+  JWT_SECRET: z.string().min(32, "JWT_SECRET must be at least 32 characters"),
+
+  ELASTICSEARCH_URL: z.url(),
+  ELASTICSEARCH_INDEX: z.string().min(1),
+  ES_REQUEST_TIMEOUT_MS: positiveInt,
+  ES_BULK_BATCH_SIZE: positiveInt,
+
+  // Slack is optional: without credentials the app still runs, /auth/slack
+  // answers 503 and rate-limit notifications are skipped.
+  SLACK_CLIENT_ID: z.string().min(1).optional(),
+  SLACK_CLIENT_SECRET: z.string().min(1).optional(),
+  // Public https URL that reaches this API (ngrok/cloudflared). Slack only
+  // redirects to https, so the callback is built from this.
+  PUBLIC_BASE_URL: z.url().transform((u) => u.replace(/\/+$/, "")).optional(),
+  SLACK_STATE_TTL_MS: positiveInt,
+  SLACK_HTTP_TIMEOUT_MS: positiveInt,
 });
 
-const parsed = envSchema.safeParse(process.env);
+// dotenv turns `KEY=` into "" - treat that as "not set" so optional keys stay optional.
+const raw = Object.fromEntries(Object.entries(process.env).filter(([, v]) => v !== ""));
+const parsed = envSchema.safeParse(raw);
 
 if (!parsed.success) {
   console.error("Invalid environment configuration:");

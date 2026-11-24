@@ -1,7 +1,7 @@
 import { Router } from "express";
-import { listQuerySchema, normalizeLeads, scheduleSchema } from "../schemas/email.schemas";
+import { listQuerySchema, normalizeLeads, scheduleSchema, searchQuerySchema } from "../schemas/email.schemas";
 import { scheduleEmails } from "../services/schedule.service";
-import { listEmails } from "../services/emails.service";
+import { listEmails, searchEmails } from "../services/emails.service";
 import { getUserId } from "../utils/requestUser";
 
 // Routes stay thin: validate input -> call a service -> send JSON.
@@ -18,4 +18,9 @@ emailsRouter.post("/schedule", async (req, res) => {
 emailsRouter.get("/", async (req, res) => {
   const query = listQuerySchema.parse(req.query);
   res.json(await listEmails(getUserId(req), query));
+});
+
+emailsRouter.get("/search", async (req, res) => {
+  const query = searchQuerySchema.parse(req.query);
+  res.json(await searchEmails(getUserId(req), query));
 });

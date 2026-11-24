@@ -50,3 +50,10 @@ export const listQuerySchema = z.object({
 });
 
 export type ListQuery = z.infer<typeof listQuerySchema>;
+
+// Same filters/pagination as the list, plus the search text (empty = everything).
+export const searchQuerySchema = listQuerySchema.extend({
+  q: z.string().trim().default(""),
+});
+
+export type SearchQuery = z.infer<typeof searchQuerySchema>;
