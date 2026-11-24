@@ -91,7 +91,7 @@ docker compose ps        # wait until all three are "healthy" (ES takes ~30-60 s
 ```bash
 cd backend
 cp .env.example .env
-npm install
+npm install                 # also generates the Prisma client (postinstall)
 ```
 
 Fill in at least these values in `backend/.env`. Everything else already has
@@ -107,7 +107,7 @@ working values:
 ### 3. Create the tables and the senders
 
 ```bash
-npx prisma migrate deploy   # creates the tables (and generates the Prisma client)
+npx prisma migrate deploy   # creates the tables
 npm run db:seed             # creates SEED_SENDER_COUNT (default 3) Ethereal sender accounts
 ```
 
