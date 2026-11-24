@@ -17,3 +17,7 @@ esdata/
 *.log
 .DS_Store
 Thumbs.db
+
+# local AI assistant files
+CLAUDE.md
+.claude/
