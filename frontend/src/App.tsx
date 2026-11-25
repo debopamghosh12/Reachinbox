@@ -7,6 +7,7 @@ import { EmailDetailPage } from "./pages/EmailDetailPage";
 import { EmailListPage } from "./pages/EmailListPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { PrivacyPage } from "./pages/PrivacyPage";
 
 // The rich-text editor (TipTap + ProseMirror) is most of the JavaScript, and
 // only Compose needs it, so that page is loaded on first visit.
@@ -18,6 +19,8 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* Public: linked from Google's OAuth consent screen */}
+      <Route path="/privacy" element={<PrivacyPage />} />
       <Route element={<RequireAuth />}>
         <Route element={<DashboardLayout />}>
           {/* key: switching tabs remounts the page, resetting search and page */}

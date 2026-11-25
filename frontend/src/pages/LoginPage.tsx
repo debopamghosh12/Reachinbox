@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { CircleAlert } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import { Button, buttonClasses } from "../components/ui/Button";
 import { GoogleIcon } from "../components/ui/GoogleIcon";
 import { Input } from "../components/ui/Input";
@@ -156,6 +156,12 @@ export function LoginPage() {
           >
             {isSignup ? "Log in" : "Sign up"}
           </button>
+        </p>
+
+        <p className="mt-8 text-center text-xs">
+          <Link to="/privacy" className="text-[#AFAFAF] hover:text-gray-600 focus-visible:outline-2 focus-visible:outline-green-600">
+            Privacy
+          </Link>
         </p>
       </div>
     </main>
