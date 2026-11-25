@@ -23,11 +23,12 @@ crashes and retries.
 
 1. [Features](#features)
 2. [Running it locally](#running-it-locally)
-3. [Configuration (env variables)](#configuration-env-variables)
-4. [Architecture](#architecture)
-5. [Behavior under load](#behavior-under-load)
-6. [Assumptions, shortcuts and trade-offs](#assumptions-shortcuts-and-trade-offs)
-7. [Project layout](#project-layout)
+3. [Deploying (Vercel + Railway)](#deploying-vercel--railway)
+4. [Configuration (env variables)](#configuration-env-variables)
+5. [Architecture](#architecture)
+6. [Behavior under load](#behavior-under-load)
+7. [Assumptions, shortcuts and trade-offs](#assumptions-shortcuts-and-trade-offs)
+8. [Project layout](#project-layout)
 
 ---
 
@@ -44,7 +45,7 @@ crashes and retries.
 | **Idempotency** | Each send starts with an atomic claim (`UPDATE … SET status='sending' WHERE status='scheduled'`). Duplicate jobs, retries and re-queues can't send twice. Every email gets a deterministic `Message-ID`. |
 | **Retries** | Transient SMTP failures retry up to `JOB_ATTEMPTS` times with exponential backoff, then the email becomes `failed` with the error stored. |
 | **Slack alerts** | Users connect Slack (OAuth, incoming webhook). When a sender hits the hourly limit for their emails, they get one message per sender per hour. It never blocks sending. |
-| **Search** | Elasticsearch full-text search over recipient, subject and body. Writes are versioned, so an older status can't overwrite a newer one. `npm run reindex` rebuilds the index from Postgres. If ES is down, sending still works. |
+| **Search** | Elasticsearch full-text search over recipient, subject and body. Writes are versioned, so an older status can't overwrite a newer one. `npm run reindex` rebuilds the index from Postgres. If ES is down, sending still works. Without `ELASTICSEARCH_URL`, search falls back to Postgres `ILIKE`. |
 | **bull-board** | Queue dashboard at `/admin/queues`, for logged-in users listed in `ADMIN_EMAILS` only. |
 | **Authentication** | **Google OAuth** (a signed `state` checked against a cookie, against CSRF) or **email + password** (`POST /auth/signup`, `POST /auth/login`; bcrypt, cost from `BCRYPT_COST`, minimum 12). Both set the same httpOnly session cookie (signed JWT). Wrong email and wrong password get the same "Invalid email or password" answer with the same timing. Login and signup are rate-limited in Redis per IP and per email. Every `/api/*` route requires login, and every query is scoped to the logged-in user. |
 | **HTML bodies** | The editor's HTML is sanitized on the server (allowlist) and sent as HTML plus a plain-text fallback. Body size is capped by `MAX_BODY_BYTES`. |
@@ -110,6 +111,7 @@ working values:
 ```bash
 npx prisma migrate deploy   # creates the tables
 npm run db:seed             # creates SEED_SENDER_COUNT (default 3) Ethereal sender accounts
+                            # (the API also does this on startup if there are none)
 ```
 
 **Ethereal** is a fake SMTP service. Messages sent through it are captured,
@@ -207,6 +209,115 @@ the API, log in through the frontend, then open
 | `npm run reindex` | Rebuilds the Elasticsearch index from Postgres. |
 | `npm run typecheck` / `npm run build` | Type-check / compile to `dist/`. |
 | `npm start` / `npm run start:worker` | Run the compiled API / worker. |
+| `npm run start:prod` | `prisma migrate deploy`, then the compiled API (what the Docker image runs). |
+
+---
+
+## Deploying (Vercel + Railway)
+
+The hosted demo is split in two, and the browser only ever talks to Vercel:
+
+```
+browser ──► https://<app>.vercel.app
+              ├─ everything else ─► the built SPA (vercel.json: SPA fallback to index.html)
+              └─ /api/*  /auth/*  /admin/*  /health
+                   └─ frontend/middleware.ts proxies to BACKEND_URL
+                        └─► Railway service (backend/, Dockerfile)
+                              prisma migrate deploy, then API + worker in one process
+                              ├─ Railway Postgres
+                              └─ Railway Redis        (no Elasticsearch)
+```
+
+Because the API is reached through the Vercel domain, the session cookie is
+first-party (`SameSite=Lax`, `Secure`) and there are no CORS requests at all.
+The OAuth callbacks go through Vercel too. `vercel.json` rewrites can't read
+environment variables, so the proxy is a small
+[Routing Middleware](frontend/middleware.ts) that reads `BACKEND_URL` at runtime.
+
+### 1. Railway (backend, Postgres, Redis)
+
+1. **New project → Deploy from GitHub repo**, pick this repo. In the service's
+   **Settings**:
+   - **Root Directory:** `/backend`
+   - **Config-as-code file:** `/backend/railway.json` (Railway doesn't look
+     inside the root directory for it, so the full path is needed). It builds
+     [`backend/Dockerfile`](backend/Dockerfile) and health-checks `/health`.
+2. **+ New → Database → PostgreSQL**, and again for **Redis**.
+3. **Networking → Generate Domain.** This `https://….up.railway.app` URL is
+   the `BACKEND_URL` for Vercel.
+4. Set the variables below (**Variables → Raw Editor** accepts the contents of
+   `backend/.env.example`; paste it, then change the values marked here).
+
+On every start the container runs `prisma migrate deploy`, then the compiled
+server. On first boot it creates the Ethereal senders itself, because the
+table is empty (`npm run db:seed` isn't needed).
+
+| Railway variable | Value |
+|---|---|
+| `NODE_ENV` | `production` (makes cookies `Secure`) |
+| `PORT` | Don't set it. Railway provides it and the API reads it. |
+| `FRONTEND_URL` | `https://<app>.vercel.app` (no trailing slash) |
+| `DATABASE_URL` | `${{Postgres.DATABASE_URL}}` |
+| `REDIS_URL` | `${{Redis.REDIS_URL}}` |
+| `RUN_WORKER_IN_API` | `true`: the API process also runs the BullMQ worker |
+| `ELASTICSEARCH_URL` | Leave it **unset/empty**: search uses Postgres instead |
+| `ELASTICSEARCH_INDEX`, `ES_REQUEST_TIMEOUT_MS`, `ES_BULK_BATCH_SIZE` | Still validated at startup; keep the `.env.example` values |
+| `JWT_SECRET` | A **new** random value, not the local one |
+| `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Same OAuth client as locally, or a separate one |
+| `GOOGLE_CALLBACK_URL` | `https://<app>.vercel.app/auth/google/callback` |
+| `ADMIN_EMAILS` | Who may open `https://<app>.vercel.app/admin/queues` |
+| `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | Optional, as locally |
+| `PUBLIC_BASE_URL` | `https://<app>.vercel.app` (already https, so no ngrok) |
+| `SMTP_DRY_RUN` | `false` |
+| `SEED_SENDER_COUNT` | `3` (senders created on first boot) |
+| `JSON_BODY_LIMIT`, `WORKER_CONCURRENCY`, `MIN_DELAY_MS`, `MAX_EMAILS_PER_HOUR_PER_SENDER`, `JOB_ATTEMPTS`, `JOB_BACKOFF_MS`, `JOB_RETENTION_HOURS`, `STUCK_SENDING_THRESHOLD_MS`, `MAX_LEADS_PER_REQUEST`, `MAX_BODY_BYTES`, `RESCHEDULE_SEQ_OFFSET_MS`, `RECONCILE_BATCH_SIZE`, `SHUTDOWN_TIMEOUT_MS`, `PAGE_SIZE_DEFAULT`, `PAGE_SIZE_MAX`, `SESSION_TTL_MS`, `BCRYPT_COST`, `AUTH_RATE_WINDOW_MS`, `AUTH_MAX_ATTEMPTS_PER_IP`, `AUTH_MAX_ATTEMPTS_PER_EMAIL`, `GOOGLE_STATE_TTL_MS`, `GOOGLE_HTTP_TIMEOUT_MS`, `SLACK_STATE_TTL_MS`, `SLACK_HTTP_TIMEOUT_MS` | Required, with no defaults in code: the `.env.example` values work |
+| `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | Optional, e.g. `30`: how long Railway waits after SIGTERM before killing the old deployment, so in-flight sends can finish (matches `SHUTDOWN_TIMEOUT_MS`) |
+
+**Redis eviction policy.** Delayed jobs are ordinary Redis keys, so Redis must
+not evict them. The API logs a warning at startup if `maxmemory-policy` isn't
+`noeviction`. If you see it, run `CONFIG SET maxmemory-policy noeviction`
+against the Railway Redis (from its **Data** tab or `redis-cli -u $REDIS_URL`).
+
+### 2. Vercel (frontend)
+
+1. **Add New → Project**, import the repo, **Root Directory:** `frontend`.
+   [`frontend/vercel.json`](frontend/vercel.json) sets the Vite build and the
+   SPA fallback.
+2. Environment variables:
+
+   | Vercel variable | Value |
+   |---|---|
+   | `BACKEND_URL` | The Railway domain, e.g. `https://outbox-api.up.railway.app` (no trailing slash). Read by the middleware at runtime; redeploy after changing it. |
+   | `VITE_API_URL` | Leave it **unset/empty**: API calls go to the same origin and the middleware proxies them. |
+
+3. Deploy, then put the production URL (`https://<app>.vercel.app`) into
+   Railway's `FRONTEND_URL`, `GOOGLE_CALLBACK_URL` and `PUBLIC_BASE_URL`. Use
+   the stable production domain, not a preview URL: preview URLs change on
+   every deploy, and OAuth only accepts registered callback URLs.
+
+### 3. Redirect URLs to update
+
+| Where | Add |
+|---|---|
+| Google Cloud Console → APIs & Services → Credentials → your OAuth client → **Authorized redirect URIs** | `https://<app>.vercel.app/auth/google/callback` (must equal `GOOGLE_CALLBACK_URL`). While the consent screen is in *Testing*, every account that logs in must be a **Test user**. |
+| Slack app → **OAuth & Permissions → Redirect URLs** (or `redirect_urls` in the manifest) | `https://<app>.vercel.app/auth/slack/callback` (= `PUBLIC_BASE_URL` + `/auth/slack/callback`) |
+
+### 4. Check it
+
+- `https://<app>.vercel.app/health` answers `{"ok":true}`, which shows the proxy works.
+- The Railway logs show `RUN_WORKER_IN_API=true: starting the email worker`,
+  `Worker … ready`, `[search] ELASTICSEARCH_URL not set: …`, and on first boot
+  `[seed] created Sender 1 …`.
+- Log in, schedule an email to yourself, and open its Ethereal **Preview** link.
+
+**Hosted trade-offs.** Search without Elasticsearch is a case-insensitive
+`ILIKE` on recipient, subject and body. Every word must match, there is no
+relevance ranking and no index (it scans the user's rows), and the body is
+matched as stored HTML. The per-IP login limit sees the address of the proxy
+in front of Railway (Vercel's), so users arriving through the same Vercel
+edge share that counter; the per-email limit is unaffected. During a redeploy
+Railway briefly runs the old and new deployment side by side, so for a moment
+there are two workers. That's safe (see [Idempotency](#idempotency-never-send-twice)).
 
 ---
 
@@ -226,7 +337,7 @@ malformed. **Every limit is read from the environment; none is hardcoded.**
 | `JSON_BODY_LIMIT` | `2mb` | Max request body (bounds the leads array) |
 | `DATABASE_URL` | `…@localhost:5433/outbox` | Postgres (note the port) |
 | `REDIS_URL` | `redis://localhost:6379` | Redis for BullMQ, rate counters and Slack dedupe |
-| `ELASTICSEARCH_URL`, `ELASTICSEARCH_INDEX` | `http://localhost:9200`, `emails` | Search |
+| `ELASTICSEARCH_URL`, `ELASTICSEARCH_INDEX` | `http://localhost:9200`, `emails` | Search. Empty URL = no indexing; search uses Postgres `ILIKE` |
 | `ES_REQUEST_TIMEOUT_MS` | `3000` | Short timeout, so a slow ES never holds anything up |
 | `ES_BULK_BATCH_SIZE` | `1000` | Documents per bulk request (reindex) |
 | `WORKER_CONCURRENCY` | `5` | Parallel jobs per worker process |
@@ -241,8 +352,9 @@ malformed. **Every limit is read from the environment; none is hardcoded.**
 | `RECONCILE_BATCH_SIZE` | `500` | Rows checked per round trip by reconcile |
 | `SHUTDOWN_TIMEOUT_MS` | `30000` | How long the worker waits for in-flight sends on shutdown |
 | `SMTP_DRY_RUN` | `false` | `true` skips the real SMTP call (load tests only) |
+| `RUN_WORKER_IN_API` | `false` | `true` runs the BullMQ worker inside the API process (one hosted service) |
 | `PAGE_SIZE_DEFAULT`, `PAGE_SIZE_MAX` | `20`, `100` | List pagination |
-| `SEED_SENDER_COUNT` | `3` | Senders created by `npm run db:seed` |
+| `SEED_SENDER_COUNT` | `3` | Senders created by `npm run db:seed`, and by the API on startup when there are none |
 | `JWT_SECRET` | placeholder | Signs session cookies and OAuth states (32+ chars) |
 | `SESSION_TTL_MS` | `604800000` | Login lifetime (7 days) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | empty | Google OAuth client (required) |
@@ -255,7 +367,8 @@ malformed. **Every limit is read from the environment; none is hardcoded.**
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | empty | Slack app (optional) |
 | `PUBLIC_BASE_URL` | empty | Public HTTPS URL of the API (ngrok), used for the Slack callback |
 | `SLACK_STATE_TTL_MS`, `SLACK_HTTP_TIMEOUT_MS` | `600000`, `5000` | Connect-link lifetime; timeout for calls to Slack |
-| `VITE_API_URL` (frontend) | `http://localhost:4000` | Where the frontend sends API calls |
+| `VITE_API_URL` (frontend) | `http://localhost:4000` | Where the frontend sends API calls. Empty = same origin (hosted) |
+| `BACKEND_URL` (Vercel only) | none | Railway URL the Vercel middleware proxies `/api`, `/auth`, `/admin`, `/health` to |
 
 ---
 
@@ -387,6 +500,9 @@ Redis. You can run any number of workers.
 - **Non-blocking:** indexing runs in the background with a short timeout. If
   ES is down, scheduling and sending carry on, a warning is logged (at most one
   line per 10 s), and search returns a clear 503.
+- **Optional:** with `ELASTICSEARCH_URL` empty, nothing is indexed (logged once
+  at startup) and search runs in Postgres instead: every word must appear in
+  the recipient, subject or body (`ILIKE`), newest first. The hosted demo uses this.
 - **Recovery:** `npm run reindex` rebuilds the index from Postgres.
 - The body is indexed as **plain text** (tags removed), so searching
   `strong` doesn't match every bold email.
@@ -492,8 +608,9 @@ for it.
   login resets that email's counter). The per-email limit also slows an
   attacker who targets one account from many IPs, but it lets someone lock a
   user's password login for up to 15 minutes by guessing; Google login still
-  works then. The IP is the socket address. Behind a reverse proxy, Express's
-  `trust proxy` would need to be set, or every user would share the proxy's IP.
+  works then. The API trusts one proxy hop (`trust proxy` = 1), so the IP is
+  the one the nearest proxy reports; locally that's the socket address. On the
+  hosted demo it is Vercel's address (see [Deploying](#deploying-vercel--railway)).
 - Passwords longer than 72 bytes are rejected, because bcrypt ignores
   everything after byte 72.
 - **Logout clears the cookie but doesn't revoke the token.** A copied cookie
@@ -530,16 +647,19 @@ for it.
 
 ```
 backend/
+  Dockerfile           production image (migrate deploy + server); railway.json uses it
   prisma/              schema, migration, seed (Ethereal senders)
   scripts/             loadtest.ts, reindex.ts
   src/
     config/            env (zod-validated), prisma, redis, elasticsearch
     middleware/        requireAuth / requireAdmin, error handler, request log
-    queue/             emailQueue (BullMQ), worker, rateLimiter (Lua), reconcile
+    queue/             emailQueue (BullMQ), startWorker + worker entry, rateLimiter (Lua), reconcile
     routes/            auth, emails, slack
     schemas/           request validation (zod)
-    services/          schedule, sendEmail, mailer, search, slack, notifications, auth
+    services/          schedule, sendEmail, mailer, search, slack, notifications, auth, seedSenders
     utils/             tokens (JWT), html (sanitize, html->text), logger, AppError
+frontend/
+  vercel.json          SPA fallback; middleware.ts proxies the API paths to BACKEND_URL
 frontend/src/
   components/ui/       Button, Input, Chip, Popover, Toast, Spinner, Skeleton, ...
   features/            auth, emails, compose, layout, slack

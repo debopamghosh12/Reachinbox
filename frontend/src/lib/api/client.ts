@@ -1,11 +1,12 @@
 // The one place that talks HTTP. Every request:
-//  - goes to VITE_API_URL
+//  - goes to VITE_API_URL, or to this same origin when it's empty (hosted:
+//    Vercel proxies /api, /auth, /admin and /health to the backend)
 //  - sends the session cookie (credentials: "include"; the API allows our origin)
 //  - turns a non-2xx answer into an ApiError carrying the backend's { error, message, details }
 import type { ApiErrorBody } from "../../types/api";
 
-export const API_URL: string = import.meta.env.VITE_API_URL;
-if (!API_URL) throw new Error("VITE_API_URL is not set (copy frontend/.env.example to frontend/.env)");
+// "" = same origin. No trailing slash, so `${API_URL}/auth/google` stays valid.
+export const API_URL: string = (import.meta.env.VITE_API_URL ?? "").replace(/\/+$/, "");
 
 export class ApiError extends Error {
   readonly status: number;
@@ -27,7 +28,7 @@ export function isUnauthorized(err: unknown): boolean {
 type Query = Record<string, string | number | undefined>;
 
 export async function api<T>(path: string, options: { method?: string; body?: unknown; query?: Query } = {}): Promise<T> {
-  const url = new URL(path, API_URL);
+  const url = new URL(`${API_URL}${path}`, window.location.origin);
   for (const [key, value] of Object.entries(options.query ?? {})) {
     if (value !== undefined && value !== "") url.searchParams.set(key, String(value));
   }

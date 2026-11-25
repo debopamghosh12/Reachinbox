@@ -10,6 +10,7 @@
     "dev:all": "concurrently -n api,worker -c blue,magenta \"npm:dev\" \"npm:dev:worker\"",
     "start": "node dist/src/server.js",
     "start:worker": "node dist/src/queue/worker.js",
+    "start:prod": "prisma migrate deploy && node dist/src/server.js",
     "loadtest": "tsx scripts/loadtest.ts",
     "reindex": "tsx scripts/reindex.ts",
     "db:migrate": "prisma migrate dev",

@@ -1,7 +1,10 @@
 // Elasticsearch: a search copy of the emails table. Postgres stays the source
 // of truth; this index can be thrown away and rebuilt (npm run reindex).
+// Optional: without ELASTICSEARCH_URL every write here is a quiet no-op and
+// search runs on Postgres instead (see emails.service).
 import type { EmailStatus } from "@prisma/client";
-import { es } from "../config/elasticsearch";
+import type { Client } from "@elastic/elasticsearch";
+import { es, searchEnabled } from "../config/elasticsearch";
 import { env } from "../config/env";
 import { AppError } from "../utils/AppError";
 import { logger } from "../utils/logger";
@@ -50,17 +53,24 @@ export interface BatchText {
 
 let indexReady = false;
 
+// For code paths that only run with ES configured (reindex, search).
+function client(): Client {
+  if (!es) throw new Error("ELASTICSEARCH_URL is not set");
+  return es;
+}
+
 export async function createIndex(): Promise<void> {
-  await es.indices.create({ index: INDEX, mappings: MAPPINGS });
+  await client().indices.create({ index: INDEX, mappings: MAPPINGS });
 }
 
 // Create the index if it's missing. Called on boot and lazily before writes,
 // so if ES was down at boot, the first write after it comes back still gets
 // our mapping (otherwise ES would auto-create the index with guessed types).
 export async function ensureIndex(): Promise<boolean> {
+  if (!searchEnabled) return false;
   if (indexReady) return true;
   try {
-    if (!(await es.indices.exists({ index: INDEX }))) await createIndex();
+    if (!(await client().indices.exists({ index: INDEX }))) await createIndex();
     indexReady = true;
   } catch (err) {
     // Two processes booting at once: the second create fails harmlessly.
@@ -98,7 +108,7 @@ export async function indexEmails(items: { email: EmailForIndex; batch: BatchTex
         createdAt: email.createdAt,
       },
     ]);
-    const res = await es.bulk({ operations });
+    const res = await client().bulk({ operations });
     for (const item of res.items) {
       const status = item.index?.status ?? 0;
       if (status === 409) conflicts++; // an equal/newer version is already there: fine
@@ -112,7 +122,7 @@ export async function indexEmails(items: { email: EmailForIndex; batch: BatchTex
 // What the API and worker call. Never awaited, never throws: a slow or dead
 // ES must not hold up scheduling or sending. Lost writes are fixed by reindex.
 export function syncToSearch(items: { email: EmailForIndex; batch: BatchText }[]): void {
-  if (items.length === 0) return;
+  if (!searchEnabled || items.length === 0) return;
   void (async () => {
     if (!(await ensureIndex())) return;
     const { failed } = await indexEmails(items);
@@ -127,7 +137,7 @@ export async function searchEmailIds(
   opts: { q: string; statuses?: EmailStatus[]; page: number; limit: number },
 ): Promise<{ ids: string[]; total: number }> {
   try {
-    const res = await es.search<unknown>({
+    const res = await client().search<unknown>({
       index: INDEX,
       from: (opts.page - 1) * opts.limit,
       size: opts.limit,

@@ -38,6 +38,12 @@ const envSchema = z.object({
   SHUTDOWN_TIMEOUT_MS: positiveInt,
   // true = worker skips the real SMTP call (load tests). Not a limit, so it has a default.
   SMTP_DRY_RUN: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
+  // true = the API process also runs the BullMQ worker (one hosted service
+  // instead of two). Locally the worker usually runs as its own process.
+  RUN_WORKER_IN_API: z.enum(["true", "false"]).default("false").transform((v) => v === "true"),
+  // Ethereal senders created on API startup when the senders table is empty
+  // (and by `npm run db:seed`).
+  SEED_SENDER_COUNT: positiveInt.default(3),
 
   PAGE_SIZE_DEFAULT: positiveInt,
   PAGE_SIZE_MAX: positiveInt,
@@ -68,7 +74,8 @@ const envSchema = z.object({
     .optional()
     .transform((v) => (v ?? "").split(",").map((e) => e.trim().toLowerCase()).filter(Boolean)),
 
-  ELASTICSEARCH_URL: z.url(),
+  // Optional: without it nothing is indexed and search uses Postgres ILIKE.
+  ELASTICSEARCH_URL: z.url().optional(),
   ELASTICSEARCH_INDEX: z.string().min(1),
   ES_REQUEST_TIMEOUT_MS: positiveInt,
   ES_BULK_BATCH_SIZE: positiveInt,

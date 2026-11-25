@@ -3,11 +3,15 @@
 // Use after ES was down, lost data, or the mapping changed. While it runs,
 // search may return partial results.
 import { env } from "../src/config/env";
-import { es } from "../src/config/elasticsearch";
+import { closeSearch, es } from "../src/config/elasticsearch";
 import { prisma } from "../src/config/prisma";
 import { createIndex, indexEmails } from "../src/services/search.service";
 
 async function main() {
+  if (!es) {
+    console.error("ELASTICSEARCH_URL is not set: there is no index to rebuild (search uses Postgres).");
+    return false;
+  }
   const index = env.ELASTICSEARCH_INDEX;
   const t0 = Date.now();
 
@@ -43,11 +47,11 @@ async function main() {
 
 main()
   .then(async (ok) => {
-    await Promise.allSettled([prisma.$disconnect(), es.close()]);
+    await Promise.allSettled([prisma.$disconnect(), closeSearch()]);
     process.exit(ok ? 0 : 1);
   })
   .catch(async (err) => {
     console.error("Reindex failed:", err instanceof Error ? err.message : err);
-    await Promise.allSettled([prisma.$disconnect(), es.close()]);
+    await Promise.allSettled([prisma.$disconnect(), closeSearch()]);
     process.exit(1);
   });

@@ -18,6 +18,12 @@ import { errorHandler, notFound } from "./middleware/errorHandler";
 export function createApp() {
   const app = express();
 
+  // Hosted, the API sits behind one reverse proxy (Railway's edge), which
+  // terminates TLS. Trusting exactly one hop makes req.ip the address that
+  // proxy saw (used by the login rate limit) and req.secure reflect https.
+  // Locally there is no proxy and no X-Forwarded-For, so nothing changes.
+  app.set("trust proxy", 1);
+
   // Only our frontend may call the API from a browser, with cookies
   // ("credentials"). Other origins get no CORS headers, so the browser won't
   // let their pages read our responses. (A list, not a plain string: with a

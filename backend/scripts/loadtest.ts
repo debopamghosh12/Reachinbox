@@ -12,7 +12,7 @@ import { parseArgs } from "node:util";
 import { env } from "../src/config/env";
 import { prisma } from "../src/config/prisma";
 import { redis } from "../src/config/redis";
-import { es } from "../src/config/elasticsearch";
+import { closeSearch, es } from "../src/config/elasticsearch";
 import { emailQueue } from "../src/queue/emailQueue";
 import { hourWindow } from "../src/queue/rateLimiter";
 import { SESSION_COOKIE, createSessionToken } from "../src/services/auth.service";
@@ -150,7 +150,7 @@ async function main() {
     await prisma.email.deleteMany({ where: { batchId } });
     await prisma.batch.delete({ where: { id: batchId } });
     // Remove the test's search documents too (best effort - ES may be off).
-    await es.deleteByQuery({ index: env.ELASTICSEARCH_INDEX, query: { term: { batchId } }, conflicts: "proceed", refresh: true }).catch(() => undefined);
+    await es?.deleteByQuery({ index: env.ELASTICSEARCH_INDEX, query: { term: { batchId } }, conflicts: "proceed", refresh: true }).catch(() => undefined);
     console.log(`\nCleaned up ${rows.length} rows and their jobs (this hour's rate counters are left to expire).`);
   }
 
@@ -159,11 +159,11 @@ async function main() {
 
 main()
   .then(async (ok) => {
-    await Promise.allSettled([emailQueue.close(), prisma.$disconnect(), redis.quit(), es.close()]);
+    await Promise.allSettled([emailQueue.close(), prisma.$disconnect(), redis.quit(), closeSearch()]);
     process.exit(ok ? 0 : 1);
   })
   .catch(async (err) => {
     console.error(err);
-    await Promise.allSettled([emailQueue.close(), prisma.$disconnect(), redis.quit(), es.close()]);
+    await Promise.allSettled([emailQueue.close(), prisma.$disconnect(), redis.quit(), closeSearch()]);
     process.exit(1);
   });

@@ -65,8 +65,8 @@ authRouter.get("/google/callback", async (req, res) => {
 
 // ---------- email + password ----------
 // JSON endpoints called with fetch by the login page. The rate limit runs
-// before any database or bcrypt work. req.ip is the socket address (no proxy
-// is trusted); see the README.
+// before any database or bcrypt work. req.ip comes from the one trusted proxy
+// hop (see app.ts); see the README.
 
 authRouter.post("/signup", async (req, res) => {
   const input = signupSchema.parse(req.body);
