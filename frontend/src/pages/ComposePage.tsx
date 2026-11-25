@@ -13,6 +13,7 @@ import { scheduleEmails } from "../lib/api/endpoints";
 import { cn } from "../lib/cn";
 import { formatShortDate } from "../lib/format";
 import { queryKeys } from "../lib/queryClient";
+import { DryRunBanner } from "../features/config/DryRunBanner";
 import type { ScheduleRequest } from "../types/api";
 
 interface FormState {
@@ -93,6 +94,7 @@ export function ComposePage() {
 
   return (
     <div className="min-h-screen pb-16">
+      <DryRunBanner />
       {/* Sticky so Send / Send Later stay reachable in a long email. z-30 keeps it
           (and the Send Later popover inside it) above the editor while scrolling. */}
       <header className={cn("sticky top-0 z-30 flex items-center gap-3 border-b bg-white px-4 py-4 transition-colors", scrolled ? "border-line" : "border-transparent")}>

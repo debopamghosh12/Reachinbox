@@ -16,19 +16,22 @@ crashes and retries.
 - **Designs:** the Figma screenshots the UI was built from are in [`design/`](design/).
 - **Demo video:** _link coming soon_
 - **Load test results:** [`docs/load-test.md`](docs/load-test.md)
+- **Hosted demo:** <https://reachinbox-tawny.vercel.app> (email delivery is
+  simulated there; see [Hosted demo](#hosted-demo))
 
 ---
 
 ## Contents
 
 1. [Features](#features)
-2. [Running it locally](#running-it-locally)
-3. [Deploying (Vercel + Railway)](#deploying-vercel--railway)
-4. [Configuration (env variables)](#configuration-env-variables)
-5. [Architecture](#architecture)
-6. [Behavior under load](#behavior-under-load)
-7. [Assumptions, shortcuts and trade-offs](#assumptions-shortcuts-and-trade-offs)
-8. [Project layout](#project-layout)
+2. [Hosted demo](#hosted-demo)
+3. [Running it locally](#running-it-locally)
+4. [Deploying (Vercel + Railway)](#deploying-vercel--railway)
+5. [Configuration (env variables)](#configuration-env-variables)
+6. [Architecture](#architecture)
+7. [Behavior under load](#behavior-under-load)
+8. [Assumptions, shortcuts and trade-offs](#assumptions-shortcuts-and-trade-offs)
+9. [Project layout](#project-layout)
 
 ---
 
@@ -64,6 +67,36 @@ crashes and retries.
 | **States** | Skeleton loaders, empty states (per tab and for searches), error states with Retry, toasts. |
 | **Polling** | Lists and counts refresh on their own when a send is near (details under [Polling](#polling-frontend)). |
 | **Session handling** | A 401 anywhere means "logged out": one redirect to `/login`, no retry loop. |
+
+---
+
+## Hosted demo
+
+**Live:** <https://reachinbox-tawny.vercel.app>
+
+**Logging in:** use **Login with Google**, or click **Sign up** and create an
+account with any email address and a password (8+ characters). The email is
+not verified, so it doesn't have to be a real inbox.
+
+> **Email delivery is simulated on the hosted demo.** The backend runs on
+> Railway's trial plan, which doesn't allow outbound SMTP
+> ([Railway: outbound networking](https://docs.railway.com/reference/outbound-networking):
+> SMTP is only available on the Pro plan and above). Sends to Ethereal would
+> just time out, so the hosted backend runs with **`SMTP_DRY_RUN=true`**: the
+> worker does everything except the SMTP call itself.
+>
+> - Everything else is real: scheduling as BullMQ delayed jobs, the delay
+>   between emails, per-sender hourly rate limiting, Slack alerts, and
+>   recovery after a restart.
+> - A banner at the top of the dashboard and compose pages says so. Sent
+>   emails show **Sent (simulated)** and have no Ethereal preview link, so
+>   nothing looks like a real delivery.
+> - Real Ethereal sending is shown in the demo video, and works when you run
+>   it locally (`SMTP_DRY_RUN=false`, the default in `.env.example`).
+
+Each email records whether its send was simulated (`emails.simulated`). If
+the flag is switched later, emails that were really sent are never relabeled.
+The UI reads the flag from the public `GET /api/config` (`{ "smtpDryRun": … }`).
 
 ---
 
@@ -268,7 +301,7 @@ table is empty (`npm run db:seed` isn't needed).
 | `ADMIN_EMAILS` | Who may open `https://<app>.vercel.app/admin/queues` |
 | `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET` | Optional, as locally |
 | `PUBLIC_BASE_URL` | `https://<app>.vercel.app` (already https, so no ngrok) |
-| `SMTP_DRY_RUN` | `false` |
+| `SMTP_DRY_RUN` | `true` on the trial plan (SMTP is blocked, see [Hosted demo](#hosted-demo)); `false` on Pro and above |
 | `SEED_SENDER_COUNT` | `3` (senders created on first boot) |
 | `JSON_BODY_LIMIT`, `WORKER_CONCURRENCY`, `MIN_DELAY_MS`, `MAX_EMAILS_PER_HOUR_PER_SENDER`, `JOB_ATTEMPTS`, `JOB_BACKOFF_MS`, `JOB_RETENTION_HOURS`, `STUCK_SENDING_THRESHOLD_MS`, `MAX_LEADS_PER_REQUEST`, `MAX_BODY_BYTES`, `RESCHEDULE_SEQ_OFFSET_MS`, `RECONCILE_BATCH_SIZE`, `SHUTDOWN_TIMEOUT_MS`, `PAGE_SIZE_DEFAULT`, `PAGE_SIZE_MAX`, `SESSION_TTL_MS`, `BCRYPT_COST`, `AUTH_RATE_WINDOW_MS`, `AUTH_MAX_ATTEMPTS_PER_IP`, `AUTH_MAX_ATTEMPTS_PER_EMAIL`, `GOOGLE_STATE_TTL_MS`, `GOOGLE_HTTP_TIMEOUT_MS`, `SLACK_STATE_TTL_MS`, `SLACK_HTTP_TIMEOUT_MS` | Required, with no defaults in code: the `.env.example` values work |
 | `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` | Optional, e.g. `30`: how long Railway waits after SIGTERM before killing the old deployment, so in-flight sends can finish (matches `SHUTDOWN_TIMEOUT_MS`) |
@@ -308,7 +341,7 @@ against the Railway Redis (from its **Data** tab or `redis-cli -u $REDIS_URL`).
 - The Railway logs show `RUN_WORKER_IN_API=true: starting the email worker`,
   `Worker … ready`, `[search] ELASTICSEARCH_URL not set: …`, and on first boot
   `[seed] created Sender 1 …`.
-- Log in, schedule an email to yourself, and open its Ethereal **Preview** link.
+- Log in and schedule an email to yourself. It should reach Sent: with `SMTP_DRY_RUN=false` it has an Ethereal **Preview** link, and in dry-run it shows **Sent (simulated)**.
 
 **Hosted trade-offs.** Search without Elasticsearch is a case-insensitive
 `ILIKE` on recipient, subject and body. Every word must match, there is no
@@ -351,7 +384,7 @@ malformed. **Every limit is read from the environment; none is hardcoded.**
 | `RESCHEDULE_SEQ_OFFSET_MS` | `10` | Spacing that keeps order when jobs move to a later hour |
 | `RECONCILE_BATCH_SIZE` | `500` | Rows checked per round trip by reconcile |
 | `SHUTDOWN_TIMEOUT_MS` | `30000` | How long the worker waits for in-flight sends on shutdown |
-| `SMTP_DRY_RUN` | `false` | `true` skips the real SMTP call (load tests only) |
+| `SMTP_DRY_RUN` | `false` | `true` skips the real SMTP call (load tests, and the hosted demo where SMTP is blocked); those emails are marked simulated |
 | `RUN_WORKER_IN_API` | `false` | `true` runs the BullMQ worker inside the API process (one hosted service) |
 | `PAGE_SIZE_DEFAULT`, `PAGE_SIZE_MAX` | `20`, `100` | List pagination |
 | `SEED_SENDER_COUNT` | `3` | Senders created by `npm run db:seed`, and by the API on startup when there are none |

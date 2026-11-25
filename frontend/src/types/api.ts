@@ -6,6 +6,10 @@ export type EmailStatus = "scheduled" | "sending" | "sent" | "failed";
 // The two sidebar tabs. "scheduled" also returns rows in "sending".
 export type ListTab = "scheduled" | "sent";
 
+export interface AppConfig {
+  smtpDryRun: boolean;
+}
+
 export interface Me {
   name: string;
   email: string;
@@ -22,6 +26,8 @@ export interface EmailListItem {
   scheduledAt: string;
   sentAt: string | null;
   previewUrl: string | null;
+  // true = "sent" while the server ran with SMTP_DRY_RUN (no real delivery)
+  simulated: boolean;
   error: string | null;
 }
 

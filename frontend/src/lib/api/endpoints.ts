@@ -1,5 +1,6 @@
 // One typed function per backend endpoint the UI uses.
 import type {
+  AppConfig,
   EmailDetail,
   EmailListItem,
   ListTab,
@@ -10,6 +11,9 @@ import type {
   SlackStatus,
 } from "../../types/api";
 import { API_URL, api, isUnauthorized } from "./client";
+
+// ---- config (public, no login) ----
+export const getConfig = () => api<AppConfig>("/api/config");
 
 // ---- auth ----
 // Logged out is a normal answer, not an error: return null. That keeps it

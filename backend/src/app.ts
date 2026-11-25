@@ -36,6 +36,10 @@ export function createApp() {
 
   app.get("/health", (_req, res) => res.json({ ok: true }));
 
+  // Public facts the UI needs before (or without) login. Registered before the
+  // /api auth guard below. smtpDryRun = sends are simulated (hosted demo).
+  app.get("/api/config", (_req, res) => res.json({ smtpDryRun: env.SMTP_DRY_RUN }));
+
   // Live queue dashboard. It shows every user's jobs, so it is admins only.
   const boardAdapter = new ExpressAdapter();
   boardAdapter.setBasePath("/admin/queues");

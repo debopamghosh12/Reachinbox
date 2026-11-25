@@ -38,6 +38,7 @@ function toListItem(e: ListRow) {
     scheduledAt: e.scheduledAt,
     sentAt: e.sentAt,
     previewUrl: e.previewUrl,
+    simulated: e.simulated,
     error: e.error,
   };
 }

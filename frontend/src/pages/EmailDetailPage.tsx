@@ -26,7 +26,7 @@ export function EmailDetailPage() {
         <h1 className="min-w-0 flex-1 truncate text-xl text-gray-900">
           {email.data ? email.data.subject : email.isPending ? <Skeleton className="h-6 w-72" /> : "Email"}
         </h1>
-        {email.data && <StatusPill status={email.data.status} scheduledAt={email.data.scheduledAt} />}
+        {email.data && <StatusPill status={email.data.status} scheduledAt={email.data.scheduledAt} simulated={email.data.simulated} />}
       </header>
 
       <div className="mx-auto max-w-[1040px] px-6">
@@ -81,7 +81,11 @@ function DetailBody({ email }: { email: EmailDetail }) {
           <p className="mt-5 text-sm whitespace-pre-wrap text-gray-900">{email.body}</p>
         )}
 
-        {email.previewUrl && (
+        {email.status === "sent" && email.simulated ? (
+          <p className="mt-8 text-sm text-gray-500">
+            Delivery was simulated (SMTP is blocked on this hosting plan), so there is no Ethereal copy.
+          </p>
+        ) : email.previewUrl && (
           <a
             href={email.previewUrl}
             target="_blank"

@@ -130,7 +130,9 @@ async function send(job: Job<SendEmailJobData>, email: EmailWithRelations) {
 
   const sentRow = await prisma.email.update({
     where: { id: email.id },
-    data: { status: "sent", sentAt: new Date(), previewUrl, messageId, error: null },
+    // simulated: recorded per row, so a later switch of SMTP_DRY_RUN never
+    // relabels emails that were (or weren't) really sent.
+    data: { status: "sent", sentAt: new Date(), previewUrl, messageId, error: null, simulated: env.SMTP_DRY_RUN },
   });
   sync(sentRow, email.batch);
 

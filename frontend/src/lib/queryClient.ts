@@ -14,6 +14,7 @@ export const queryKeys = {
   count: (tab: string) => ["emails", "count", tab] as const,
   detail: (id: string) => ["emails", "detail", id] as const,
   slack: ["slack"] as const,
+  config: ["config"] as const,
 };
 
 // Any other request answering 401 means the session ended (expired, or logged

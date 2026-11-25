@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import { Outlet, useLocation, useSearchParams } from "react-router";
 import { useToast } from "../../components/ui/Toast";
 import { queryKeys } from "../../lib/queryClient";
+import { DryRunBanner } from "../config/DryRunBanner";
 import { Sidebar } from "./Sidebar";
 
 // Readable text for the ?slack=error&reason=... flags the backend sends back.
@@ -20,9 +21,12 @@ export function DashboardLayout() {
   return (
     <div className="flex min-h-screen">
       <Sidebar />
-      <main className="min-w-0 flex-1 px-4 pt-4">
-        <Outlet />
-      </main>
+      <div className="min-w-0 flex-1">
+        <DryRunBanner />
+        <main className="px-4 pt-4">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

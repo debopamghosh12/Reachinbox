@@ -18,12 +18,12 @@ export function EmailRow({ email }: { email: EmailListItem }) {
       <span className="w-48 shrink-0 truncate text-sm text-gray-900" title={email.toEmail}>
         To: {email.toEmail}
       </span>
-      <StatusPill status={email.status} scheduledAt={email.scheduledAt} error={email.error} />
+      <StatusPill status={email.status} scheduledAt={email.scheduledAt} error={email.error} simulated={email.simulated} />
       <p className="min-w-0 flex-1 truncate text-sm">
         <span className="font-semibold text-gray-900">{email.subject}</span>
         {email.bodyPreview && <span className="text-gray-400"> - {email.bodyPreview}</span>}
       </p>
-      {email.previewUrl && (
+      {email.previewUrl && !email.simulated && (
         <a
           href={email.previewUrl}
           target="_blank"

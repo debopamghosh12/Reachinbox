@@ -79,6 +79,8 @@ model Email {
   attempts    Int         @default(0)
   messageId   String?     @map("message_id")
   previewUrl  String?     @map("preview_url")
+  // true = "sent" with SMTP_DRY_RUN on: no SMTP call happened
+  simulated   Boolean     @default(false)
   error       String?
   sentAt      DateTime?   @map("sent_at")
   createdAt   DateTime    @default(now()) @map("created_at")
